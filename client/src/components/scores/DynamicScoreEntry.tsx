@@ -1165,7 +1165,7 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
                 {course?.code} - {course?.name}
               </Typography>
               <Typography variant="subtitle2" color="text.secondary">
-                Type: {course?.type} | Slot: {course?.slot} | Venue:{" "}
+              Type: {course?.type} | Slot: {Array.isArray(course?.slot) ? course?.slot.join(', ') : course?.slot} | Venue:{" "}
                 {course?.venue || "N/A"}
               </Typography>
             </Grid>

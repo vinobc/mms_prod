@@ -73,10 +73,6 @@ const CoursesPage: React.FC = () => {
   const [tabValue, setTabValue] = useState(0);
 
   // Fetch courses on component mount
-  // useEffect(() => {
-  //   fetchCourses();
-  // }, []);
-  // Fetch courses on component mount
   useEffect(() => {
     fetchCourses();
   }, []);
@@ -224,7 +220,11 @@ const CoursesPage: React.FC = () => {
                 <TableCell>{course.code}</TableCell>
                 <TableCell>{course.name}</TableCell>
                 <TableCell>{course.type}</TableCell>
-                <TableCell>{course.slot}</TableCell>
+                <TableCell>
+                  {Array.isArray(course.slot)
+                    ? course.slot.join(", ")
+                    : course.slot}
+                </TableCell>
                 <TableCell>{course.venue}</TableCell>
                 <TableCell>
                   <IconButton
@@ -306,7 +306,10 @@ const CoursesPage: React.FC = () => {
                     Course Type: {viewingCourse.type}
                   </Typography>
                   <Typography variant="subtitle1">
-                    Slot: {viewingCourse.slot}
+                    Slot:{" "}
+                    {Array.isArray(viewingCourse.slot)
+                      ? viewingCourse.slot.join(", ")
+                      : viewingCourse.slot}
                   </Typography>
                   <Typography variant="subtitle1">
                     Venue: {viewingCourse.venue || "Not specified"}

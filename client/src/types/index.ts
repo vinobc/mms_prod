@@ -84,7 +84,7 @@ export interface Course {
   code: string;
   name: string;
   type: CourseType;
-  slot: SlotType;
+  slot: SlotType[] | SlotType;
   semester: number;
   venue: string;
   // academicYear: string;

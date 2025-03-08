@@ -11,9 +11,13 @@ import {
   Typography,
   Divider,
   Paper,
-  // FormControl,
-  // InputLabel,
-  // Select,
+  FormControl,
+  InputLabel,
+  Select,
+  SelectChangeEvent,
+  Chip,
+  Box,
+  OutlinedInput,
 } from "@mui/material";
 import { Course, CourseType, SlotType } from "../../types";
 import { EVALUATION_SCHEMES } from "../../utils/evaluationSchemes";
@@ -79,17 +83,6 @@ const slotOptions: SlotType[] = [
   "L39+L40",
 ];
 
-// // Academic year options
-// const academicYearOptions = [
-//   "2023-24",
-//   "2024-25",
-//   "2025-26",
-//   "2026-27",
-//   "2027-28",
-//   "2028-29",
-//   "2029-30",
-// ];
-
 const CourseForm: React.FC<CourseFormProps> = ({
   open,
   onClose,
@@ -100,9 +93,8 @@ const CourseForm: React.FC<CourseFormProps> = ({
     code: "",
     name: "",
     type: "PG" as CourseType,
-    slot: "A1" as SlotType,
+    slot: [] as SlotType[],
     venue: "",
-    // academicYear: academicYearOptions[1], // Default to current academic year
     evaluationScheme: EVALUATION_SCHEMES["PG"].weights,
   });
 
@@ -112,9 +104,8 @@ const CourseForm: React.FC<CourseFormProps> = ({
         code: course.code,
         name: course.name,
         type: course.type,
-        slot: course.slot || "A1",
+        slot: Array.isArray(course.slot) ? course.slot : [course.slot].filter(Boolean),
         venue: course.venue || "",
-        // academicYear: course.academicYear,
         evaluationScheme: course.evaluationScheme,
       });
     } else {
@@ -122,16 +113,15 @@ const CourseForm: React.FC<CourseFormProps> = ({
         code: "",
         name: "",
         type: "PG" as CourseType,
-        slot: "A1" as SlotType,
+        slot: [] as SlotType[],
         venue: "",
-        // academicYear: academicYearOptions[1], // Default to current academic year
         evaluationScheme: EVALUATION_SCHEMES["PG"].weights,
       });
     }
   }, [course]);
 
   const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement> | SelectChangeEvent<unknown>
   ) => {
     const { name, value } = e.target;
 
@@ -141,6 +131,12 @@ const CourseForm: React.FC<CourseFormProps> = ({
         ...prev,
         type: courseType,
         evaluationScheme: EVALUATION_SCHEMES[courseType].weights,
+      }));
+    } else if (name === "slot") {
+      // Handle slot separately since it's a multi-select
+      setFormData((prev) => ({
+        ...prev,
+        [name]: value,
       }));
     } else {
       setFormData((prev) => ({
@@ -201,21 +197,37 @@ const CourseForm: React.FC<CourseFormProps> = ({
               </TextField>
             </Grid>
             <Grid item xs={12} md={6}>
-              <TextField
-                select
-                name="slot"
-                label="Course Slot"
-                value={formData.slot}
-                onChange={handleChange}
-                fullWidth
-                required
-              >
-                {slotOptions.map((slot) => (
-                  <MenuItem key={slot} value={slot}>
-                    {slot}
-                  </MenuItem>
-                ))}
-              </TextField>
+              <FormControl fullWidth required>
+                <InputLabel id="slot-label">Course Slots</InputLabel>
+                <Select
+                  labelId="slot-label"
+                  name="slot"
+                  multiple
+                  value={Array.isArray(formData.slot) ? formData.slot : [formData.slot].filter(Boolean)}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setFormData((prev) => ({
+                      ...prev,
+                      slot: value,
+                    }));
+                  }}
+                  renderValue={(selected) => {
+                    // Convert selected values to a comma-delimited string
+                    const selections = Array.isArray(selected) ? selected : [selected].filter(Boolean);
+                    if (selections.length === 0) return "";
+                    
+                    // Join the slots with commas
+                    return selections.join(", ");
+                  }}
+                  input={<OutlinedInput label="Course Slots" />}
+                >
+                  {slotOptions.map((slot) => (
+                    <MenuItem key={slot} value={slot}>
+                      {slot}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
             </Grid>
             <Grid item xs={12} md={6}>
               <TextField
@@ -229,22 +241,7 @@ const CourseForm: React.FC<CourseFormProps> = ({
               />
             </Grid>
             <Grid item xs={12} md={6}>
-              {/* <FormControl fullWidth required>
-                <InputLabel id="academic-year-label">Academic Year</InputLabel>
-                <Select
-                  labelId="academic-year-label"
-                  name="academicYear"
-                  value={formData.academicYear}
-                  onChange={handleChange}
-                  label="Academic Year"
-                >
-                  {academicYearOptions.map((year) => (
-                    <MenuItem key={year} value={year}>
-                      {year}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl> */}
+              {/* Any additional fields can go here */}
             </Grid>
 
             <Grid item xs={12}>
