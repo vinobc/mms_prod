@@ -3,8 +3,7 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // components/scores/DynamicScoreEntry.tsx
-import React, { useState, useEffect, useCallback } from "react";
-import { debounce } from "lodash";
+import React, { useState, useEffect } from "react";
 import {
   Box,
   Button,
@@ -120,10 +119,6 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  // Auto-save state
-  const [autoSaving, setAutoSaving] = useState(false);
-  const [lastSaved, setLastSaved] = useState<Date | null>(null);
-
   useEffect(() => {
     if (!course) return;
     const components = Object.keys(course.evaluationScheme);
@@ -132,51 +127,6 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
     }
     loadExistingScores();
   }, [course, students]);
-
-  // Create the auto-save function with debounce
-  const autoSave = useCallback(
-    debounce(async () => {
-      if (!course || students.length === 0 || saving) return;
-
-      try {
-        setAutoSaving(true);
-        const scoresToSubmit = prepareScoresForSubmission();
-
-        // Only save if there are scores to submit
-        if (scoresToSubmit.length > 0) {
-          await scoreService.updateCourseScores(course._id, scoresToSubmit);
-          setLastSaved(new Date());
-          // Don't show success message to avoid disrupting the user
-        }
-      } catch (error) {
-        console.error("Auto-save failed:", error);
-        // Don't show error to avoid disrupting the user unless it's critical
-      } finally {
-        setAutoSaving(false);
-      }
-    }, 3000), // 3-second delay after changes before saving
-    [course, students, caScores, labScores, assignmentScores, saving]
-  );
-
-  // Call autoSave whenever scores change
-  useEffect(() => {
-    if (activeComponent !== "TOTAL" && !loading) {
-      // Don't auto-save on Total view or during loading
-      autoSave();
-    }
-
-    // Cancel pending auto-saves when unmounting
-    return () => {
-      autoSave.cancel();
-    };
-  }, [
-    caScores,
-    labScores,
-    assignmentScores,
-    activeComponent,
-    loading,
-    autoSave,
-  ]);
 
   const loadExistingScores = async () => {
     if (!course || students.length === 0) {
@@ -721,7 +671,6 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
       const scoresToSubmit = prepareScoresForSubmission();
       await scoreService.updateCourseScores(course._id, scoresToSubmit);
       setSuccess("All scores saved successfully!");
-      setLastSaved(new Date());
       if (onSaveComplete) {
         onSaveComplete();
       }
@@ -1216,37 +1165,9 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
                 {course?.code} - {course?.name}
               </Typography>
               <Typography variant="subtitle2" color="text.secondary">
-                Type: {course?.type} | Slot:{" "}
-                {Array.isArray(course?.slot)
-                  ? course?.slot.join(", ")
-                  : course?.slot}{" "}
-                | Venue: {course?.venue || "N/A"}
+              Type: {course?.type} | Slot: {Array.isArray(course?.slot) ? course?.slot.join(', ') : course?.slot} | Venue:{" "}
+                {course?.venue || "N/A"}
               </Typography>
-
-              {/* Auto-save status indicator */}
-              {activeComponent !== "TOTAL" && (
-                <Box sx={{ display: "flex", alignItems: "center", mt: 1 }}>
-                  {autoSaving ? (
-                    <Box
-                      sx={{
-                        display: "flex",
-                        alignItems: "center",
-                        color: "text.secondary",
-                      }}
-                    >
-                      <CircularProgress size={16} sx={{ mr: 1 }} />
-                      <Typography variant="caption">Auto-saving...</Typography>
-                    </Box>
-                  ) : lastSaved ? (
-                    <Typography
-                      variant="caption"
-                      sx={{ color: "success.main" }}
-                    >
-                      Last auto-saved: {lastSaved.toLocaleTimeString()}
-                    </Typography>
-                  ) : null}
-                </Box>
-              )}
             </Grid>
             <Grid
               item
