@@ -7,6 +7,8 @@ import studentRoutes from "./routes/studentRoutes";
 import scoreRoutes from "./routes/scoreRoutes";
 import authRoutes from "./routes/authRoutes";
 import facultyRoutes from "./routes/facultyRoutes";
+import systemSettingRoutes from "./routes/systemSettingRoutes";
+import { initializeSystemSettings } from "./controllers/systemSettingController";
 
 // Load environment variables
 dotenv.config();
@@ -15,24 +17,20 @@ const app: Express = express();
 const port = process.env.PORT || 3000;
 
 // Middleware
-//app.use(cors());
-// Update CORS configuration
-app.use(cors({
-  origin: '*', // For testing; in production you might want to limit this
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
-
-//app.use(express.json());
-app.use(express.json({ limit: '50mb' }));
-//app.use(express.urlencoded({ extended: true }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use("/api/settings", systemSettingRoutes);
 
 // Database connection
 mongoose
   .connect(process.env.MONGODB_URI!)
-  .then(() => {
+  .then(async () => {
+    // Make this callback async
     console.log("Connected to MongoDB");
+    // Initialize system settings after connection is established
+    await initializeSystemSettings();
+    console.log("System settings initialized");
   })
   .catch((error) => {
     console.error("MongoDB connection error:", error);

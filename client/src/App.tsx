@@ -15,6 +15,7 @@ import ProfilePage from "./pages/ProfilePage";
 import FacultyManagementPage from "./pages/admin/FacultyManagementPage";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import { AuthProvider } from "./context/AuthContext";
+import SystemSettingsPage from "./pages/admin/SystemSettingsPage";
 
 const theme = createTheme({
   palette: {
@@ -52,6 +53,10 @@ function App() {
                 <Route
                   path="/admin/faculty"
                   element={<FacultyManagementPage />}
+                />
+                <Route
+                  path="/admin/settings"
+                  element={<SystemSettingsPage />}
                 />
               </Route>
 

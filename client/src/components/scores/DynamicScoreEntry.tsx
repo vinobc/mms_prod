@@ -1,3 +1,5 @@
+// export default DynamicScoreEntry;
+
 /* eslint-disable react-hooks/exhaustive-deps */
 /* eslint-disable prefer-const */
 
@@ -19,6 +21,7 @@ import {
 } from "@mui/material";
 import { Course, Student } from "../../types";
 import { scoreService } from "../../services/scoreService";
+import { systemSettingService } from "../../services/systemSettingService";
 import CAScoreEntryComponent from "./CAScoreEntryComponent";
 import LabScoreEntryComponent from "./LabScoreEntryComponent";
 import AssignmentScoreEntryComponent from "./AssignmentScoreEntryComponent";
@@ -27,6 +30,7 @@ import {
   getCourseTotalPassingMarks,
   getComponentScale,
 } from "../../utils/scoreUtils";
+import { useAuth } from "../../context/AuthContext";
 
 // Helper: converts a number to words (digit-by-digit)
 const numberToWords = (num: number): string => {
@@ -105,6 +109,7 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
   students,
   onSaveComplete,
 }) => {
+  const { user } = useAuth();
   const [activeComponent, setActiveComponent] = useState<string>("");
   const [caScores, setCAScores] = useState<{
     [component: string]: DetailedScore;
@@ -124,6 +129,10 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
   const [autoSaving, setAutoSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
 
+  // Score entry control state
+  const [scoreEntryEnabled, setScoreEntryEnabled] = useState<boolean>(true);
+  const [scoreEntryMessage, setScoreEntryMessage] = useState<string>("");
+
   useEffect(() => {
     if (!course) return;
     const components = Object.keys(course.evaluationScheme);
@@ -133,10 +142,28 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
     loadExistingScores();
   }, [course, students]);
 
+  // Check if score entry is enabled
+  useEffect(() => {
+    const checkScoreEntryStatus = async () => {
+      try {
+        const status = await systemSettingService.isScoreEntryEnabled();
+        setScoreEntryEnabled(status.enabled);
+        setScoreEntryMessage(status.message);
+      } catch (error) {
+        console.error("Failed to check score entry status:", error);
+        // Default to enabled if there's an error checking
+        setScoreEntryEnabled(true);
+      }
+    };
+
+    checkScoreEntryStatus();
+  }, []);
+
   // Create the auto-save function with debounce
   const autoSave = useCallback(
     debounce(async () => {
-      if (!course || students.length === 0 || saving) return;
+      if (!course || students.length === 0 || saving || !scoreEntryEnabled)
+        return;
 
       try {
         setAutoSaving(true);
@@ -150,12 +177,28 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
         }
       } catch (error) {
         console.error("Auto-save failed:", error);
+        // If auto-save fails due to disabled score entry, update the state
+        if ((error as any).response?.data?.status === "DISABLED") {
+          setScoreEntryEnabled(false);
+          setScoreEntryMessage(
+            (error as any).response?.data?.message ||
+              "Score entry has been disabled"
+          );
+        }
         // Don't show error to avoid disrupting the user unless it's critical
       } finally {
         setAutoSaving(false);
       }
     }, 3000), // 3-second delay after changes before saving
-    [course, students, caScores, labScores, assignmentScores, saving]
+    [
+      course,
+      students,
+      caScores,
+      labScores,
+      assignmentScores,
+      saving,
+      scoreEntryEnabled,
+    ]
   );
 
   // Call autoSave whenever scores change
@@ -715,6 +758,13 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
 
   const handleSaveAllScores = async () => {
     if (!course) return;
+
+    // Check if score entry is disabled
+    if (!scoreEntryEnabled) {
+      setError("Score entry has been disabled by administrator");
+      return;
+    }
+
     try {
       setSaving(true);
       setError(null);
@@ -727,7 +777,15 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
       }
     } catch (error: any) {
       console.error("Error saving scores:", error);
-      setError(error.response?.data?.message || "Failed to save scores");
+      // Special handling for disabled status
+      if (error.response?.data?.status === "DISABLED") {
+        setError(
+          error.response.data.message || "Score entry is currently disabled"
+        );
+        setScoreEntryEnabled(false);
+      } else {
+        setError(error.response?.data?.message || "Failed to save scores");
+      }
     } finally {
       setSaving(false);
     }
@@ -1259,7 +1317,10 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
                 color="primary"
                 onClick={handleSaveAllScores}
                 disabled={
-                  saving || students.length === 0 || activeComponent === "TOTAL"
+                  saving ||
+                  students.length === 0 ||
+                  activeComponent === "TOTAL" ||
+                  !scoreEntryEnabled
                 }
                 size="large"
               >
@@ -1269,13 +1330,26 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
                 variant="outlined"
                 color="secondary"
                 onClick={handleExportCSV}
-                disabled={students.length === 0}
+                // disabled={students.length === 0}
+                disabled={
+                  students.length === 0 ||
+                  (!scoreEntryEnabled && !user?.isAdmin) // Disable for faculty but not for admins
+                }
                 size="large"
               >
                 EXPORT CSV
               </Button>
             </Grid>
           </Grid>
+
+          {/* Score entry disabled warning */}
+          {!scoreEntryEnabled && (
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              {scoreEntryMessage ||
+                "Score entry has been disabled by administrator. You can view scores but cannot save changes."}
+            </Alert>
+          )}
+
           {error && (
             <Alert
               severity="error"

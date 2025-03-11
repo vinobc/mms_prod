@@ -3,6 +3,7 @@ import Score, { IScore } from "../models/Score";
 import Course from "../models/Course";
 import Student from "../models/Student";
 import mongoose from "mongoose";
+import { checkScoreEntryEnabled } from "./systemSettingController";
 import {
   ScoreInput,
   ExtendedScoreInput,
@@ -52,6 +53,16 @@ export default {
   // POST: Create or update scores for multiple students in a course
   updateCourseScores: async (req: Request, res: Response): Promise<void> => {
     try {
+      // CHECK IF SCORE ENTRY IS ENABLED
+      const isScoreEntryEnabled = await checkScoreEntryEnabled();
+      if (!isScoreEntryEnabled) {
+        res.status(403).json({
+          message: "Score entry has been disabled by administrator",
+          status: "DISABLED",
+        });
+        return;
+      }
+
       const { courseId, scores } = req.body;
       console.log(`Updating scores for course ${courseId}:`, scores);
 
