@@ -1,4 +1,3 @@
-// components/scores/LabScoreEntryComponent.tsx
 import React, { useState, useEffect } from "react";
 import {
   Box,
@@ -19,13 +18,11 @@ import {
 import { Add as AddIcon, Delete as DeleteIcon } from "@mui/icons-material";
 import { Student, CourseType } from "../../types";
 import { getComponentScale, convertLabScore } from "../../utils/scoreUtils";
-import { numberToWords } from "../../utils/formatUtils";
 
 interface LabSession {
   date: string;
   maxMarks: number;
   obtainedMarks: number;
-  index?: number; // Explicitly include index to ensure persistence
 }
 
 interface LabScore {
@@ -38,13 +35,14 @@ interface LabScore {
 interface LabScoreEntryComponentProps {
   students: Student[];
   componentName: string;
-  courseType: CourseType;
+  courseType: CourseType; // Add course type
   onScoresChange: (scores: { [studentId: string]: LabScore }) => void;
   initialScores?: { [studentId: string]: LabScore };
 }
 
 const LabScoreEntryComponent: React.FC<LabScoreEntryComponentProps> = ({
   students,
+  // componentName,
   courseType,
   onScoresChange,
   initialScores = {},
@@ -55,10 +53,8 @@ const LabScoreEntryComponent: React.FC<LabScoreEntryComponentProps> = ({
     new Date().toISOString().split("T")[0],
   ]);
 
-  // Store scores as a dictionary of studentId -> sessions array
-  const [studentScores, setStudentScores] = useState<{
-    [studentId: string]: LabSession[];
-  }>({});
+  // Use a simple 2D array for scores [studentIndex][sessionIndex]
+  const [scoreMatrix, setScoreMatrix] = useState<number[][]>([]);
 
   // Get scale configuration based on course type
   const scaleConfig = getComponentScale(courseType, "LAB");
@@ -68,68 +64,54 @@ const LabScoreEntryComponent: React.FC<LabScoreEntryComponentProps> = ({
   // Initialize from props
   useEffect(() => {
     // Initialize dates from initialScores if available
-    let defaultDates = [...dates];
-
+    let initialDates = [...dates];
     if (Object.keys(initialScores).length > 0) {
-      const firstStudentId = Object.keys(initialScores)[0];
-      const firstStudent = initialScores[firstStudentId];
-
-      if (firstStudent?.sessions && firstStudent.sessions.length > 0) {
-        // Sort sessions by index if available to maintain order
-        const sortedSessions = [...firstStudent.sessions].sort((a, b) =>
-          a.index !== undefined && b.index !== undefined ? a.index - b.index : 0
-        );
-
-        defaultDates = sortedSessions.map(
-          (s) => s.date || new Date().toISOString().split("T")[0]
-        );
-        setDates(defaultDates);
+      const firstStudent = Object.values(initialScores)[0];
+      if (
+        firstStudent &&
+        firstStudent.sessions &&
+        firstStudent.sessions.length > 0
+      ) {
+        initialDates = firstStudent.sessions.map((s) => s.date);
+        setDates(initialDates);
       }
     }
 
-    // Initialize student scores from initialScores
-    const initialStudentScores: { [studentId: string]: LabSession[] } = {};
+    // Initialize score matrix
+    const matrix: number[][] = [];
 
-    students.forEach((student) => {
-      const studentId = student._id;
-      const initialScore = initialScores[studentId];
+    students.forEach((student, studentIndex) => {
+      matrix[studentIndex] = [];
 
-      if (initialScore?.sessions && initialScore.sessions.length > 0) {
-        // Sort sessions by index to maintain order
-        const sortedSessions = [...initialScore.sessions].sort((a, b) =>
-          a.index !== undefined && b.index !== undefined ? a.index - b.index : 0
-        );
-
-        initialStudentScores[studentId] = sortedSessions;
-      } else {
-        // Create default empty scores for each date
-        initialStudentScores[studentId] = defaultDates.map((date, idx) => ({
-          date,
-          maxMarks: 10,
-          obtainedMarks: 0,
-          index: idx,
-        }));
-      }
+      // For each date, find the corresponding score or use 0
+      initialDates.forEach((_, dateIndex) => {
+        const studentScore = initialScores[student._id];
+        const score = studentScore?.sessions?.[dateIndex]?.obtainedMarks || 0;
+        matrix[studentIndex][dateIndex] = score;
+      });
     });
 
-    setStudentScores(initialStudentScores);
+    setScoreMatrix(matrix);
 
-    // Initial update to parent after setting up state
+    // Initial update to parent
     setTimeout(() => {
-      updateParent(initialStudentScores, defaultDates);
+      updateParent();
     }, 100);
-  }, [initialScores]);
+  }, []);
 
   // Calculate total for a student based on course type
-  const calculateTotal = (sessions: LabSession[]): number => {
-    if (!sessions || sessions.length === 0) return 0;
+  const calculateTotal = (studentIndex: number): number => {
+    if (!scoreMatrix[studentIndex]) return 0;
+
+    const scores = scoreMatrix[studentIndex];
+    if (!scores || scores.length === 0) return 0;
 
     let sum = 0;
     let count = 0;
 
-    for (const session of sessions) {
-      if (session.obtainedMarks !== undefined) {
-        sum += session.obtainedMarks;
+    for (let i = 0; i < scores.length; i++) {
+      if (scores[i] !== undefined) {
+        sum += scores[i];
         count++;
       }
     }
@@ -146,48 +128,26 @@ const LabScoreEntryComponent: React.FC<LabScoreEntryComponentProps> = ({
     const newDates = [...dates];
     newDates[index] = newDate;
     setDates(newDates);
-
-    // Update all student sessions with the new date
-    const updatedScores = { ...studentScores };
-    Object.keys(updatedScores).forEach((studentId) => {
-      if (updatedScores[studentId][index]) {
-        updatedScores[studentId][index] = {
-          ...updatedScores[studentId][index],
-          date: newDate,
-        };
-      }
-    });
-
-    setStudentScores(updatedScores);
-    updateParent(updatedScores, newDates);
   };
 
   // Add a new session
   const handleAddSession = () => {
     // Add a new date
     const newDate = new Date().toISOString().split("T")[0];
-    const newDates = [...dates, newDate];
-    setDates(newDates);
+    setDates((prevDates) => [...prevDates, newDate]);
 
-    // Add an empty score for this date for all students
-    const updatedScores = { ...studentScores };
-    const newIndex = dates.length;
-
-    Object.keys(updatedScores).forEach((studentId) => {
-      if (!updatedScores[studentId]) {
-        updatedScores[studentId] = [];
+    // Add a column of zeros to the score matrix
+    setScoreMatrix((prevMatrix) => {
+      const newMatrix = [...prevMatrix];
+      for (let i = 0; i < students.length; i++) {
+        if (!newMatrix[i]) newMatrix[i] = [];
+        newMatrix[i].push(0);
       }
-
-      updatedScores[studentId].push({
-        date: newDate,
-        maxMarks: 10,
-        obtainedMarks: 0,
-        index: newIndex,
-      });
+      return newMatrix;
     });
 
-    setStudentScores(updatedScores);
-    updateParent(updatedScores, newDates);
+    // Ensure parent component is updated
+    setTimeout(updateParent, 100);
   };
 
   // Remove a session
@@ -201,26 +161,19 @@ const LabScoreEntryComponent: React.FC<LabScoreEntryComponentProps> = ({
     const newDates = dates.filter((_, i) => i !== index);
     setDates(newDates);
 
-    // Remove the session from all students
-    const updatedScores = { ...studentScores };
-
-    Object.keys(updatedScores).forEach((studentId) => {
-      updatedScores[studentId] = updatedScores[studentId]
-        .filter((_, i) => i !== index)
-        // Update indices after removal
-        .map((session, newIdx) => ({
-          ...session,
-          index: newIdx,
-        }));
-    });
-
-    setStudentScores(updatedScores);
-    updateParent(updatedScores, newDates);
+    // Remove the column from the score matrix
+    const newMatrix = [...scoreMatrix];
+    for (let i = 0; i < newMatrix.length; i++) {
+      if (newMatrix[i]) {
+        newMatrix[i] = newMatrix[i].filter((_, j) => j !== index);
+      }
+    }
+    setScoreMatrix(newMatrix);
   };
 
   // Handle score change
   const handleScoreChange = (
-    studentId: string,
+    studentIndex: number,
     sessionIndex: number,
     value: string
   ) => {
@@ -232,80 +185,45 @@ const LabScoreEntryComponent: React.FC<LabScoreEntryComponentProps> = ({
       // Ensure value is between 0 and 10
       numValue = Math.max(0, Math.min(10, numValue));
 
-      // Update the specific student's score
-      const updatedScores = { ...studentScores };
+      // Update score matrix
+      setScoreMatrix((prevMatrix) => {
+        const newMatrix = [...prevMatrix];
+        if (!newMatrix[studentIndex])
+          newMatrix[studentIndex] = Array(dates.length).fill(0);
+        newMatrix[studentIndex][sessionIndex] = numValue;
+        return newMatrix;
+      });
 
-      if (!updatedScores[studentId]) {
-        // Initialize if missing
-        updatedScores[studentId] = dates.map((date, idx) => ({
-          date,
-          maxMarks: 10,
-          obtainedMarks: 0,
-          index: idx,
-        }));
-      }
-
-      if (!updatedScores[studentId][sessionIndex]) {
-        // Initialize if missing
-        updatedScores[studentId][sessionIndex] = {
-          date: dates[sessionIndex],
-          maxMarks: 10,
-          obtainedMarks: 0,
-          index: sessionIndex,
-        };
-      }
-
-      updatedScores[studentId][sessionIndex] = {
-        ...updatedScores[studentId][sessionIndex],
-        obtainedMarks: numValue,
-      };
-
-      setStudentScores(updatedScores);
-      updateParent(updatedScores, dates);
+      // Update parent component with formatted scores
+      setTimeout(updateParent, 0);
     } catch (err) {
       console.error("Error updating score:", err);
     }
   };
 
   // Convert to parent format and update
-  const updateParent = (
-    currentScores: { [studentId: string]: LabSession[] } = studentScores,
-    currentDates: string[] = dates
-  ) => {
+  const updateParent = () => {
     const formattedScores: { [studentId: string]: LabScore } = {};
 
-    students.forEach((student) => {
-      const studentId = student._id;
-      const sessions = currentScores[studentId] || [];
+    students.forEach((student, studentIndex) => {
+      const sessions: LabSession[] = [];
 
-      // Ensure all dates have a session
-      const completeSessionsArray = currentDates.map((date, idx) => {
-        const existingSession =
-          sessions.find((s) => s.index === idx) ||
-          sessions.find((s) => s.date === date);
-
-        if (existingSession) {
-          return {
-            ...existingSession,
-            index: idx, // Update index to match position
-          };
-        }
-
-        return {
+      // Create sessions array
+      dates.forEach((date, sessionIndex) => {
+        sessions.push({
           date,
           maxMarks: 10,
-          obtainedMarks: 0,
-          index: idx,
-        };
+          obtainedMarks: scoreMatrix[studentIndex]?.[sessionIndex] || 0,
+        });
       });
 
       // Calculate total
-      const total = calculateTotal(completeSessionsArray);
+      const total = calculateTotal(studentIndex);
 
       // Create the score object
-      formattedScores[studentId] = {
+      formattedScores[student._id] = {
         componentName: "LAB",
-        sessions: completeSessionsArray,
+        sessions,
         maxMarks: maxMarks,
         totalObtained: total,
       };
@@ -313,6 +231,51 @@ const LabScoreEntryComponent: React.FC<LabScoreEntryComponentProps> = ({
 
     // Update parent
     onScoresChange(formattedScores);
+  };
+
+  // Update parent when scores change
+  useEffect(() => {
+    if (scoreMatrix.length > 0) {
+      updateParent();
+    }
+  }, [scoreMatrix, dates]);
+
+  // Convert number to words function
+  const numberToWords = (num: number): string => {
+    // Convert the number to a string to handle each digit
+    const numStr = num.toString();
+    const digits = numStr.split("");
+
+    // Map each digit to its word representation
+    const words = digits.map((digit) => {
+      switch (digit) {
+        case "0":
+          return "ZERO";
+        case "1":
+          return "ONE";
+        case "2":
+          return "TWO";
+        case "3":
+          return "THREE";
+        case "4":
+          return "FOUR";
+        case "5":
+          return "FIVE";
+        case "6":
+          return "SIX";
+        case "7":
+          return "SEVEN";
+        case "8":
+          return "EIGHT";
+        case "9":
+          return "NINE";
+        default:
+          return "";
+      }
+    });
+
+    // Join with spaces
+    return words.join(" ");
   };
 
   return (
@@ -343,6 +306,14 @@ const LabScoreEntryComponent: React.FC<LabScoreEntryComponentProps> = ({
           {error}
         </Alert>
       )}
+
+      {/* <Typography variant="body2" sx={{ mb: 2, ml: 2 }}>
+        - Faculty enters score under each date (out of 10)
+      </Typography>
+      <Typography variant="body2" sx={{ mb: 2, ml: 2 }}>
+        - Out_of_{maxMarks} is the average of all sessions scaled to {maxMarks}{" "}
+        marks
+      </Typography> */}
 
       <TableContainer component={Paper} sx={{ overflowX: "auto" }}>
         <Table size="small">
@@ -386,8 +357,7 @@ const LabScoreEntryComponent: React.FC<LabScoreEntryComponentProps> = ({
           </TableHead>
           <TableBody>
             {students.map((student, studentIndex) => {
-              const sessions = studentScores[student._id] || [];
-              const total = calculateTotal(sessions);
+              const total = calculateTotal(studentIndex);
               const isPassing = total >= passingMarks;
 
               return (
@@ -399,11 +369,9 @@ const LabScoreEntryComponent: React.FC<LabScoreEntryComponentProps> = ({
                   <TableCell>{student.name}</TableCell>
                   <TableCell>{student.semester}</TableCell>
 
-                  {dates.map((date, sessionIndex) => {
-                    const session =
-                      sessions.find((s) => s.index === sessionIndex) ||
-                      sessions.find((s) => s.date === date);
-                    const value = session?.obtainedMarks || 0;
+                  {dates.map((_, sessionIndex) => {
+                    const value =
+                      scoreMatrix[studentIndex]?.[sessionIndex] || 0;
 
                     return (
                       <TableCell key={`score-${sessionIndex}`} align="center">
@@ -412,7 +380,7 @@ const LabScoreEntryComponent: React.FC<LabScoreEntryComponentProps> = ({
                           value={value}
                           onChange={(e) =>
                             handleScoreChange(
-                              student._id,
+                              studentIndex,
                               sessionIndex,
                               e.target.value
                             )
