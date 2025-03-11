@@ -75,7 +75,7 @@ sudo systemctl start nginx
 # Clone the repository
 mkdir -p ~/mms
 cd ~/mms
-git clone https://github.com/vinobc/mms.git .
+git clone https://github.com/vinobc/mms_prod.git .
 git checkout production  # Switch to production branch
 
 # Set up server environment variables
