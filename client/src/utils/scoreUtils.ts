@@ -129,17 +129,45 @@ export function convertCAScore(
 /**
  * Convert a lab session average (0-10) to the appropriate lab scale
  */
-export function convertLabScore(
-  averageSessionScore: number,
-  courseType: CourseType
-): number {
-  const config = getComponentScale(courseType, "LAB");
+// export function convertLabScore(
+//   averageSessionScore: number,
+//   courseType: CourseType
+// ): number {
+//   const config = getComponentScale(courseType, "LAB");
 
-  // For lab-only courses, scale from 0-10 to 0-100 directly
-  if (courseType === "UG-Lab-Only" || courseType === "PG-Lab-Only") {
-    return Math.round((averageSessionScore / 10) * 100);
+//   // For lab-only courses, scale from 0-10 to 0-100 directly
+//   if (courseType === "UG-Lab-Only" || courseType === "PG-Lab-Only") {
+//     return Math.round((averageSessionScore / 10) * 100);
+//   }
+
+//   // For other courses, use the regular scaling
+//   return Math.round((averageSessionScore / 10) * config.maxMarks);
+// }
+
+// utils/scoreUtils.js - Updated Lab Score Conversion Function
+
+/**
+ * Converts the average lab session score to the appropriate scale based on course type
+ *
+ * @param {number} averageScore - The average score from all lab sessions (typically out of 10)
+ * @param {string} courseType - The type of course
+ * @returns {number} - The properly scaled lab score
+ */
+export const convertLabScore = (averageScore, courseType) => {
+  // Default to 0 if no score
+  if (!averageScore || isNaN(averageScore)) return 0;
+
+  // Normalize courseType for case-insensitive comparison
+  const courseTypeLower = courseType.toLowerCase();
+
+  // For lab-only courses, scale to 100
+  if (courseTypeLower === "ug-lab-only" || courseTypeLower === "pg-lab-only") {
+    // Scale from out of 10 to out of 100
+    return Math.round(averageScore * 10);
   }
-
-  // For other courses, use the regular scaling
-  return Math.round((averageSessionScore / 10) * config.maxMarks);
-}
+  // For integrated courses, scale to 30
+  else {
+    // Scale from out of 10 to out of 30
+    return Math.round(averageScore * 3);
+  }
+};

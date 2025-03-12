@@ -1,10 +1,3 @@
-// export default DynamicScoreEntry;
-
-/* eslint-disable react-hooks/exhaustive-deps */
-/* eslint-disable prefer-const */
-
-/* eslint-disable @typescript-eslint/no-explicit-any */
-// components/scores/DynamicScoreEntry.tsx
 import React, { useState, useEffect, useCallback } from "react";
 import { debounce } from "lodash";
 import {
@@ -29,6 +22,7 @@ import TotalScoreComponent from "./TotalScoreComponent";
 import {
   getCourseTotalPassingMarks,
   getComponentScale,
+  convertLabScore,
 } from "../../utils/scoreUtils";
 import { useAuth } from "../../context/AuthContext";
 import { useRef } from "react";
@@ -86,6 +80,7 @@ interface LabSession {
   date: string;
   maxMarks: number;
   obtainedMarks: number;
+  index?: number; // Added index to track session order
 }
 
 interface LabScore {
@@ -192,7 +187,7 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
       } finally {
         setAutoSaving(false);
       }
-    }, 3000), // 3-second delay after changes before saving
+    }, 3000),
     [
       course,
       students,
@@ -203,26 +198,6 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
       scoreEntryEnabled,
     ]
   );
-
-  // Call autoSave whenever scores change
-  // useEffect(() => {
-  //   if (activeComponent !== "TOTAL" && !loading) {
-  //     // Don't auto-save on Total view or during loading
-  //     autoSave();
-  //   }
-
-  //   // Cancel pending auto-saves when unmounting
-  //   return () => {
-  //     autoSave.cancel();
-  //   };
-  // }, [
-  //   caScores,
-  //   labScores,
-  //   assignmentScores,
-  //   activeComponent,
-  //   loading,
-  //   autoSave,
-  // ]);
 
   useEffect(() => {
     if (activeComponent !== "TOTAL" && !loading) {
@@ -510,7 +485,7 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
             );
           }
 
-          // Process lab sessions if available
+          // Process lab sessions if available - UPDATED FOR BETTER PERSISTENCE
           if (
             scoreEntry.lab_sessions &&
             Array.isArray(scoreEntry.lab_sessions) &&
@@ -518,32 +493,58 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
           ) {
             // If student has a LAB component, update with sessions
             if (updatedLabScores[studentId]) {
-              updatedLabScores[studentId].sessions =
-                scoreEntry.lab_sessions.map((session: any) => ({
+              // Sort sessions by index to ensure proper ordering
+              const sortedSessions = [...scoreEntry.lab_sessions].sort(
+                (a, b) => {
+                  // Use index if available, otherwise fall back to position in array
+                  const aIndex = a.index !== undefined ? a.index : 0;
+                  const bIndex = b.index !== undefined ? b.index : 0;
+                  return aIndex - bIndex;
+                }
+              );
+
+              updatedLabScores[studentId].sessions = sortedSessions.map(
+                (session, position) => ({
                   date: session.date || new Date().toISOString().split("T")[0],
                   maxMarks: session.maxMarks || 10,
                   obtainedMarks: session.obtainedMarks || 0,
-                }));
+                  // Preserve index if available, otherwise use position
+                  index: session.index !== undefined ? session.index : position,
+                })
+              );
             } else {
               // Create a new lab component if none exists
               updatedLabScores[studentId] = {
                 componentName: "LAB",
-                sessions: scoreEntry.lab_sessions.map((session: any) => ({
-                  date: session.date || new Date().toISOString().split("T")[0],
-                  maxMarks: session.maxMarks || 10,
-                  obtainedMarks: session.obtainedMarks || 0,
-                })),
-                maxMarks: 30, // Default max marks
+                sessions: scoreEntry.lab_sessions.map(
+                  (session: any, position: number) => ({
+                    date:
+                      session.date || new Date().toISOString().split("T")[0],
+                    maxMarks: session.maxMarks || 10,
+                    obtainedMarks: session.obtainedMarks || 0,
+                    // Preserve index if available
+                    index:
+                      session.index !== undefined ? session.index : position,
+                  })
+                ),
+                maxMarks: getComponentScale(course.type, "LAB").maxMarks, // Dynamic max marks based on course type
                 totalObtained: 0, // Will calculate below
               };
             }
 
-            // Calculate total obtained score from sessions
+            // Calculate total obtained score from sessions with the correct scale
             if (updatedLabScores[studentId].sessions.length > 0) {
-              const totalObtained =
-                scoreEntry.scores.find((s: any) => s.componentName === "LAB")
-                  ?.obtainedMarks || 0;
-              updatedLabScores[studentId].totalObtained = totalObtained;
+              const sessions = updatedLabScores[studentId].sessions;
+              // Calculate average session score
+              const sum = sessions.reduce(
+                (total, session) => total + (session.obtainedMarks || 0),
+                0
+              );
+              const average = sum / sessions.length;
+
+              // Apply correct scaling based on course type
+              const scaledScore = convertLabScore(average, course.type);
+              updatedLabScores[studentId].totalObtained = scaledScore;
             }
           }
           // Check for lab sessions in questions
@@ -556,8 +557,9 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
             );
 
             if (labSessionQuestions.length > 0 && updatedLabScores[studentId]) {
+              // Extract sessions from questions, preserving any indices if available
               updatedLabScores[studentId].sessions = labSessionQuestions.map(
-                (q: any) => {
+                (q: any, position: number) => {
                   const obtainedMarks =
                     q.parts && q.parts.length > 0
                       ? Number(q.parts[0].obtainedMarks) || 0
@@ -568,9 +570,24 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
                       q.meta?.date || new Date().toISOString().split("T")[0],
                     maxMarks: 10,
                     obtainedMarks: obtainedMarks,
+                    // Use index from meta if available, otherwise use position
+                    index:
+                      q.meta?.index !== undefined ? q.meta.index : position,
                   };
                 }
               );
+
+              // Recalculate total with proper scaling
+              const sessions = updatedLabScores[studentId].sessions;
+              if (sessions.length > 0) {
+                const sum = sessions.reduce(
+                  (total, session) => total + (session.obtainedMarks || 0),
+                  0
+                );
+                const average = sum / sessions.length;
+                const scaledScore = convertLabScore(average, course.type);
+                updatedLabScores[studentId].totalObtained = scaledScore;
+              }
             }
             // If we have a LAB component but no sessions details, create default sessions
             else if (updatedLabScores[studentId]) {
@@ -583,11 +600,13 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
                   date: new Date().toISOString().split("T")[0],
                   maxMarks: 10,
                   obtainedMarks: Math.ceil(labTotalScore / 2),
+                  index: 0,
                 },
                 {
                   date: new Date().toISOString().split("T")[0],
                   maxMarks: 10,
                   obtainedMarks: Math.floor(labTotalScore / 2),
+                  index: 1,
                 },
               ];
             }
@@ -628,7 +647,6 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
   };
 
   const handleLabScoreChange = (scores: { [studentId: string]: LabScore }) => {
-    // setLabScores(scores);
     setLabScores((prev) => {
       // Only update if there are actual changes
       if (JSON.stringify(prev) === JSON.stringify(scores)) {
@@ -644,6 +662,7 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
     setAssignmentScores(scores);
   };
 
+  // UPDATED: Prepare scores for submission with proper lab session handling
   const prepareScoresForSubmission = () => {
     const formattedScores: any[] = [];
 
@@ -721,30 +740,43 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
         if (labScores[student._id]) {
           const labScore = labScores[student._id];
 
-          // Add the main LAB component score
+          // Add the main LAB component score with correct maxMarks based on course type
+          const scaleConfig = getComponentScale(course.type, "LAB");
+          const labMaxMarks = scaleConfig.maxMarks;
+
           studentScores.push({
             componentName: "LAB",
-            maxMarks: labScore.maxMarks,
+            maxMarks: labMaxMarks,
             obtainedMarks: labScore.totalObtained || 0,
           });
 
-          // Process lab sessions for storage
+          // Process lab sessions for storage with preserved indices
           if (labScore.sessions && labScore.sessions.length > 0) {
-            // Add to lab_sessions array
-            labSessions = labScore.sessions.map((session, index) => ({
-              date: session.date,
+            // Sort sessions by index for consistent ordering
+            const sortedSessions = [...labScore.sessions].sort((a, b) => {
+              // Use index if available, otherwise fall back to comparison of dates
+              const aIndex = a.index !== undefined ? a.index : 999;
+              const bIndex = b.index !== undefined ? b.index : 999;
+              return aIndex - bIndex;
+            });
+
+            // Add to lab_sessions array WITH INDICES preserved
+            labSessions = sortedSessions.map((session, position) => ({
+              date: session.date || new Date().toISOString().split("T")[0],
               maxMarks: session.maxMarks || 10,
               obtainedMarks: session.obtainedMarks || 0,
-              index: index,
+              // Preserve the original index if available
+              index: session.index !== undefined ? session.index : position,
             }));
 
             // Also represent lab sessions as questions for backward compatibility
-            labScore.sessions.forEach((session, index) => {
+            sortedSessions.forEach((session, index) => {
               aggregatedQuestions.push({
                 questionNumber: 20 + index, // Use high numbers to avoid conflicts
                 meta: {
                   type: "lab_session",
                   date: session.date,
+                  index: session.index, // Include index in meta for recovery
                 },
                 parts: [
                   {
@@ -777,7 +809,7 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
             questions: aggregatedQuestions,
           };
 
-          // If lab sessions exist, add them explicitly
+          // If lab sessions exist, add them explicitly with their indices
           if (labSessions.length > 0) {
             studentData.lab_sessions = labSessions;
           }
@@ -984,9 +1016,16 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
         const labData = labScores[student._id];
 
         if (labData && labData.sessions && labData.sessions.length > 0) {
+          // Sort sessions by index to ensure consistent ordering
+          const sortedSessions = [...labData.sessions].sort((a, b) => {
+            const aIndex = a.index !== undefined ? a.index : 999;
+            const bIndex = b.index !== undefined ? b.index : 999;
+            return aIndex - bIndex;
+          });
+
           for (let i = 0; i < maxSessions; i++) {
-            if (i < labData.sessions.length) {
-              const session = labData.sessions[i];
+            if (i < sortedSessions.length) {
+              const session = sortedSessions[i];
               row.push(session.date, session.obtainedMarks || 0);
             } else {
               row.push("", 0);
@@ -1371,7 +1410,6 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
                 variant="outlined"
                 color="secondary"
                 onClick={handleExportCSV}
-                // disabled={students.length === 0}
                 disabled={
                   students.length === 0 ||
                   (!scoreEntryEnabled && !user?.isAdmin) // Disable for faculty but not for admins
