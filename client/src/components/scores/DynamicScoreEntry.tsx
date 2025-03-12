@@ -69,7 +69,8 @@ interface StudentDetailedScore {
   V: QuestionPartScores;
   outOf50: number;
   outOf20: number;
-  [key: string]: QuestionPartScores | number; // Add string index signature
+  testDate?: string; // Add testDate field
+  [key: string]: QuestionPartScores | number | string | undefined; // Add string type for testDate
 }
 
 interface DetailedScore {
@@ -264,6 +265,9 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
                   updatedCAScores[component.componentName] = {};
                 }
 
+                // Extract testDate from component (if available)
+                const testDate = component.testDate || "";
+
                 // Initialize student CA score structure
                 const studentCAScore: StudentDetailedScore = {
                   I: { a: 0, b: 0, c: 0, d: 0, total: 0 },
@@ -273,6 +277,7 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
                   V: { a: 0, b: 0, c: 0, d: 0, total: 0 },
                   outOf50: component.obtainedMarks || 0,
                   outOf20: 0,
+                  testDate: testDate, // Store testDate in score data
                 };
 
                 // Apply conversion factor to calculate outOf20 score
@@ -312,10 +317,17 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
           ) {
             // Find all CA components in the scores array
             const caComponents: string[] = [];
+            // Create a map to store test dates by component
+            const testDatesByComponent: { [component: string]: string } = {};
+
             if (scoreEntry.scores && Array.isArray(scoreEntry.scores)) {
               scoreEntry.scores.forEach((score: any) => {
                 if (score.componentName?.startsWith("CA")) {
                   caComponents.push(score.componentName);
+                  // Store the test date if available
+                  if (score.testDate) {
+                    testDatesByComponent[score.componentName] = score.testDate;
+                  }
                 }
               });
             }
@@ -336,7 +348,7 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
               questionsByComponent["CA1"] = [];
             }
 
-            // Process each question
+            // Process each question - extract testDate from meta when available
             scoreEntry.questions.forEach((question: any) => {
               // Skip questions that are lab sessions
               if (question.meta && question.meta.type === "lab_session") {
@@ -349,6 +361,12 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
               // First check meta.component if available
               if (question.meta && question.meta.component) {
                 targetComponent = question.meta.component;
+
+                // If question has a meta.date, and the component exists in our updated scores,
+                // save the date in testDatesByComponent
+                if (question.meta.date && targetComponent) {
+                  testDatesByComponent[targetComponent] = question.meta.date;
+                }
               }
               // Otherwise, guess based on question number
               else {
@@ -397,7 +415,12 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
                     V: { a: 0, b: 0, c: 0, d: 0, total: 0 },
                     outOf50: 0,
                     outOf20: 0,
+                    testDate: testDatesByComponent[componentName] || "", // Use stored date if available
                   };
+                } else if (testDatesByComponent[componentName]) {
+                  // If we have a date from the question metadata, update it in the score
+                  updatedCAScores[componentName][studentId].testDate =
+                    testDatesByComponent[componentName];
                 }
 
                 // Extract question details
@@ -405,6 +428,17 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
                   if (!q.parts || !Array.isArray(q.parts)) {
                     console.warn("Question missing parts array:", q);
                     return;
+                  }
+
+                  // If this question has a date and the component doesn't already have one,
+                  // store it for this component and student
+                  if (
+                    q.meta &&
+                    q.meta.date &&
+                    updatedCAScores[componentName][studentId]
+                  ) {
+                    updatedCAScores[componentName][studentId].testDate =
+                      q.meta.date;
                   }
 
                   // Map question number to a letter (I-V)
@@ -662,7 +696,7 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
     setAssignmentScores(scores);
   };
 
-  // UPDATED: Prepare scores for submission with proper lab session handling
+  // UPDATED: Prepare scores for submission with proper test date handling
   const prepareScoresForSubmission = () => {
     const formattedScores: any[] = [];
 
@@ -672,11 +706,14 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
         let aggregatedQuestions: any[] = [];
         let labSessions: any[] = [];
 
-        // Process CA scores (CA1, CA2, CA3)
+        // Process CA scores (CA1, CA2, CA3) - Now with testDate
         Object.keys(caScores).forEach((componentName) => {
           if (caScores[componentName] && caScores[componentName][student._id]) {
             const studentScore = caScores[componentName][student._id];
             const questions: any[] = [];
+
+            // Extract testDate from student score data
+            const testDate = studentScore.testDate || "";
 
             // Process each question (I, II, III, IV, V) and its parts (a,b,c,d)
             questionKeys.forEach((questionNum, idx) => {
@@ -697,7 +734,10 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
 
                 questions.push({
                   questionNumber: actualQuestionNumber,
-                  meta: { component: componentName },
+                  meta: {
+                    component: componentName,
+                    date: testDate, // Include test date in meta
+                  },
                   parts: [
                     {
                       partName: "a",
@@ -732,6 +772,7 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
               componentName,
               maxMarks: 50,
               obtainedMarks: studentScore.outOf50 || 0,
+              testDate: testDate, // Add testDate to the component score
             });
           }
         });
@@ -881,6 +922,7 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
         "Program",
         "Semester",
         "Academic Year",
+        "Test Date", // Added Test Date to headers
       ];
       // For each question (Q1 to Q5), add columns for a, b, c, d, and total
       for (let q = 1; q <= 5; q++) {
@@ -916,6 +958,9 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
         );
         const caData = caScores[activeComponent]?.[student._id];
         if (caData) {
+          // Add test date to the row
+          row.push(caData.testDate || "");
+
           const order = ["I", "II", "III", "IV", "V"] as const;
           order.forEach((qKey) => {
             const qData = caData[qKey] as QuestionPartScores;
@@ -936,7 +981,9 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
             numberToWords(scaledScore as number)
           );
         } else {
-          for (let i = 0; i < 28; i++) {
+          row.push(""); // Empty test date
+          for (let i = 0; i < 27; i++) {
+            // Adjusted for testDate column
             row.push(0);
           }
         }
