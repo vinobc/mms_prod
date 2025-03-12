@@ -6,12 +6,10 @@ import {
   Drawer,
   IconButton,
   List,
-  // ListItem,
   ListItemIcon,
   ListItemText,
   Toolbar,
   Typography,
-  // useTheme,
   Divider,
   Button,
   Menu,
@@ -28,10 +26,10 @@ import {
   AccountCircle as AccountCircleIcon,
   Logout as LogoutIcon,
   Settings as SettingsIcon,
-  // AdminPanelSettings as AdminIcon,
 } from "@mui/icons-material";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
+import amityLogo from "../../assets/amity_logo.png"; // Import the logo
 
 const drawerWidth = 240;
 
@@ -46,7 +44,6 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
 
   const navigate = useNavigate();
   const location = useLocation();
-  // const theme = useTheme();
   const { user, logout } = useAuth();
 
   const isAuthenticated = !!user;
@@ -182,19 +179,40 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
           ml: { sm: `${drawerWidth}px` },
         }}
       >
-        <Toolbar>
-          <IconButton
-            color="inherit"
-            aria-label="open drawer"
-            edge="start"
-            onClick={handleDrawerToggle}
-            sx={{ mr: 2, display: { sm: "none" } }}
-          >
-            <MenuIcon />
-          </IconButton>
-          <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
-            Marks Management System
-          </Typography>
+        <Toolbar sx={{ display: "flex", justifyContent: "space-between" }}>
+          <Box sx={{ display: "flex", alignItems: "center" }}>
+            <IconButton
+              color="inherit"
+              aria-label="open drawer"
+              edge="start"
+              onClick={handleDrawerToggle}
+              sx={{ mr: 2, display: { sm: "none" } }}
+            >
+              <MenuIcon />
+            </IconButton>
+
+            <Typography
+              variant="h6"
+              noWrap
+              component="div"
+              sx={{ display: { xs: "block", sm: "block" } }}
+            >
+              Marks Management System
+            </Typography>
+          </Box>
+
+          {/* Logo in the center of the AppBar */}
+          <Box
+            component="img"
+            src={amityLogo}
+            alt="Amity University Logo"
+            sx={{
+              position: "absolute",
+              left: "50%",
+              transform: "translateX(-50%)",
+              height: 40,
+            }}
+          />
 
           {isAuthenticated ? (
             <Box sx={{ display: "flex", alignItems: "center" }}>
