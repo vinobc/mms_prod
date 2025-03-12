@@ -31,6 +31,7 @@ import {
   getComponentScale,
 } from "../../utils/scoreUtils";
 import { useAuth } from "../../context/AuthContext";
+import { useRef } from "react";
 
 // Helper: converts a number to words (digit-by-digit)
 const numberToWords = (num: number): string => {
@@ -133,6 +134,8 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
   const [scoreEntryEnabled, setScoreEntryEnabled] = useState<boolean>(true);
   const [scoreEntryMessage, setScoreEntryMessage] = useState<string>("");
 
+  const previousLabScoresRef = useRef<string>("");
+
   useEffect(() => {
     if (!course) return;
     const components = Object.keys(course.evaluationScheme);
@@ -202,10 +205,40 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
   );
 
   // Call autoSave whenever scores change
+  // useEffect(() => {
+  //   if (activeComponent !== "TOTAL" && !loading) {
+  //     // Don't auto-save on Total view or during loading
+  //     autoSave();
+  //   }
+
+  //   // Cancel pending auto-saves when unmounting
+  //   return () => {
+  //     autoSave.cancel();
+  //   };
+  // }, [
+  //   caScores,
+  //   labScores,
+  //   assignmentScores,
+  //   activeComponent,
+  //   loading,
+  //   autoSave,
+  // ]);
+
   useEffect(() => {
     if (activeComponent !== "TOTAL" && !loading) {
       // Don't auto-save on Total view or during loading
-      autoSave();
+      if (activeComponent === "LAB") {
+        // For LAB component, only trigger auto-save when there's a significant change
+        // This helps avoid continuous re-renders from minor updates
+        const currentScoresKey = JSON.stringify(Object.keys(labScores));
+        if (previousLabScoresRef.current !== currentScoresKey) {
+          previousLabScoresRef.current = currentScoresKey;
+          autoSave();
+        }
+      } else {
+        // For other components, use the regular auto-save
+        autoSave();
+      }
     }
 
     // Cancel pending auto-saves when unmounting
@@ -595,7 +628,14 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
   };
 
   const handleLabScoreChange = (scores: { [studentId: string]: LabScore }) => {
-    setLabScores(scores);
+    // setLabScores(scores);
+    setLabScores((prev) => {
+      // Only update if there are actual changes
+      if (JSON.stringify(prev) === JSON.stringify(scores)) {
+        return prev; // Return previous state if no changes
+      }
+      return scores;
+    });
   };
 
   const handleAssignmentScoreChange = (scores: {
@@ -1244,6 +1284,7 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
           courseType={course.type}
           onScoresChange={handleLabScoreChange}
           initialScores={labScores}
+          key="lab-score-component"
         />
       );
     } else if (activeComponent === "ASSIGNMENT") {
