@@ -924,6 +924,33 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
         "Academic Year",
         "Test Date", // Added Test Date to headers
       ];
+
+      const getTestDateForCA = (): string => {
+        if (!activeComponent.startsWith("CA") || !caScores[activeComponent]) {
+          return new Date().toLocaleDateString();
+        }
+
+        // Count occurrences of each date
+        const dateCounts: { [key: string]: number } = {};
+        let mostCommonDate = "";
+        let highestCount = 0;
+
+        // Loop through all students' data for this component
+        Object.values(caScores[activeComponent]).forEach((studentScore) => {
+          const date = studentScore.testDate || "";
+          if (date) {
+            dateCounts[date] = (dateCounts[date] || 0) + 1;
+
+            if (dateCounts[date] > highestCount) {
+              highestCount = dateCounts[date];
+              mostCommonDate = date;
+            }
+          }
+        });
+
+        return mostCommonDate || new Date().toLocaleDateString();
+      };
+
       // For each question (Q1 to Q5), add columns for a, b, c, d, and total
       for (let q = 1; q <= 5; q++) {
         headers.push(`Q${q}_a`, `Q${q}_b`, `Q${q}_c`, `Q${q}_d`, `Q${q}_total`);
@@ -942,6 +969,7 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
         `Course Code: ${course.code}`,
         `Course Name: ${course.name}`,
         `Course Type: ${course.type}`,
+        `Test Date: ${getTestDateForCA()}`, // Add test date to the header info
       ]);
       csvRows.push([]);
       csvRows.push(headers);
