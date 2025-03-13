@@ -99,27 +99,25 @@ export const CAScoreEntryComponent: React.FC<CAScoreEntryComponentProps> = ({
 }) => {
   // Get date from first student's score or use current date
   const getInitialDate = (): Date => {
+    // Only look for dates specifically for THIS component (CA1, CA2, CA3)
     if (initialScores) {
-      // Try to find any student with a testDate
       for (const studentId in initialScores) {
         const studentScore = initialScores[studentId];
         if (studentScore?.testDate) {
           try {
-            // Parse the stored date (could be in various formats)
+            // Parse the stored date
             if (studentScore.testDate.includes("/")) {
-              // If it's already in dd/mm/yyyy format
               return parse(studentScore.testDate, DATE_FORMAT, new Date());
             } else {
-              // If it's in ISO format or another format, try direct parsing
               return new Date(studentScore.testDate);
             }
           } catch (err) {
-            console.error("Error parsing stored date:", err);
+            console.error(`Error parsing date for ${componentName}:`, err);
           }
         }
       }
     }
-    return new Date(); // Default to current date if no stored date found
+    return new Date(); // Default to current date
   };
 
   const [testDate, setTestDate] = useState<Date | null>(getInitialDate());
@@ -131,10 +129,19 @@ export const CAScoreEntryComponent: React.FC<CAScoreEntryComponentProps> = ({
   const passingMarks = scaleConfig.passingMarks;
 
   useEffect(() => {
+    // If we have initial scores, use them; otherwise create new ones
     if (initialScores && Object.keys(initialScores).length > 0) {
+      // We have scores for this specific component - use them
       const formattedScores: DetailedScore = {};
+
       Object.keys(initialScores).forEach((studentId) => {
         const studentScore = initialScores[studentId];
+
+        // Get the test date for this specific component
+        // If not found, generate one based on initial date calculation
+        const componentTestDate =
+          studentScore.testDate || format(getInitialDate(), DATE_FORMAT);
+
         formattedScores[studentId] = {
           I: studentScore.I || { a: 0, b: 0, c: 0, d: 0, total: 0 },
           II: studentScore.II || { a: 0, b: 0, c: 0, d: 0, total: 0 },
@@ -143,13 +150,30 @@ export const CAScoreEntryComponent: React.FC<CAScoreEntryComponentProps> = ({
           V: studentScore.V || { a: 0, b: 0, c: 0, d: 0, total: 0 },
           outOf50: studentScore.outOf50 || 0,
           outOf20: studentScore.outOf20 || 0,
-          testDate:
-            studentScore.testDate || format(getInitialDate(), DATE_FORMAT),
+          testDate: componentTestDate, // Use component-specific date
         };
       });
+
       setScores(formattedScores);
+      // Also set the test date state for the date picker
+      const firstStudent = Object.values(initialScores)[0];
+      if (firstStudent?.testDate) {
+        try {
+          if (firstStudent.testDate.includes("/")) {
+            setTestDate(parse(firstStudent.testDate, DATE_FORMAT, new Date()));
+          } else {
+            setTestDate(new Date(firstStudent.testDate));
+          }
+        } catch (err) {
+          console.error("Error setting date from initial scores:", err);
+          setTestDate(new Date());
+        }
+      }
     } else {
+      // Create new scores for all students with today's date
       const newScores: DetailedScore = {};
+      const today = format(new Date(), DATE_FORMAT);
+
       (students || []).forEach((student) => {
         if (student && student._id) {
           newScores[student._id] = {
@@ -160,13 +184,14 @@ export const CAScoreEntryComponent: React.FC<CAScoreEntryComponentProps> = ({
             V: { a: 0, b: 0, c: 0, d: 0, total: 0 },
             outOf50: 0,
             outOf20: 0,
-            testDate: format(getInitialDate(), DATE_FORMAT),
+            testDate: today,
           };
         }
       });
+
       setScores(newScores);
     }
-  }, [students, initialScores]);
+  }, [students, initialScores, componentName]);
 
   // Update test date for all students when the date changes
   const handleDateChange = (newDate: Date | null) => {

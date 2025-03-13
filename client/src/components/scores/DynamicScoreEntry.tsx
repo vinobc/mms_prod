@@ -267,6 +267,10 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
 
                 // Extract testDate from component (if available)
                 const testDate = component.testDate || "";
+                console.log(
+                  `Loading test date for ${component.componentName}:`,
+                  testDate
+                );
 
                 // Initialize student CA score structure
                 const studentCAScore: StudentDetailedScore = {
@@ -714,6 +718,7 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
 
             // Extract testDate from student score data
             const testDate = studentScore.testDate || "";
+            console.log(`Saving test date for ${componentName}:`, testDate);
 
             // Process each question (I, II, III, IV, V) and its parts (a,b,c,d)
             questionKeys.forEach((questionNum, idx) => {
