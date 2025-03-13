@@ -221,11 +221,6 @@ Add the following content:
 
 echo "Starting deployment process..."
 
-# Pull latest production code
-cd ~/mms
-git checkout production
-git pull origin production
-
 # Install and build server
 cd ~/mms/server
 npm install
