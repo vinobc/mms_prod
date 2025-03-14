@@ -182,8 +182,8 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
     checkScoreEntryStatus();
   }, []);
 
+  // Handle academic year change
   const handleAcademicYearChange = (event: any) => {
-    if (!user?.isAdmin) return; // Only proceed if user is admin
     setAcademicYear(event.target.value);
   };
 
@@ -1586,6 +1586,7 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
             </Grid>
           </Grid>
 
+          {/* NEW: Academic Year selector */}
           <Box sx={{ mb: 3 }}>
             <FormControl sx={{ width: 200, mb: 2 }}>
               <InputLabel id="academic-year-label">Academic Year</InputLabel>
@@ -1594,7 +1595,6 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
                 value={academicYear}
                 onChange={handleAcademicYearChange}
                 label="Academic Year"
-                disabled={!user?.isAdmin} // Only admin can change the academic year
               >
                 {academicYearOptions.map((year) => (
                   <MenuItem key={year} value={year}>
@@ -1607,9 +1607,7 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
               variant="caption"
               sx={{ ml: 2, color: "text.secondary" }}
             >
-              {user?.isAdmin
-                ? "All scores will be saved with this academic year"
-                : ""}
+              All scores will be saved with academic year: {academicYear}
             </Typography>
           </Box>
 

@@ -11,15 +11,10 @@ import {
   Tab,
   Chip,
   Typography,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
 } from "@mui/material";
 import { Course, Student } from "../../types";
 import { scoreService } from "../../services/scoreService";
 import { systemSettingService } from "../../services/systemSettingService";
-import { studentService } from "../../services/studentService";
 import CAScoreEntryComponent from "./CAScoreEntryComponent";
 import LabScoreEntryComponent from "./LabScoreEntryComponent";
 import AssignmentScoreEntryComponent from "./AssignmentScoreEntryComponent";
@@ -31,15 +26,6 @@ import {
 } from "../../utils/scoreUtils";
 import { useAuth } from "../../context/AuthContext";
 import { useRef } from "react";
-
-// Academic year options
-const academicYearOptions = [
-  "2023-24",
-  "2024-25",
-  "2025-26",
-  "2026-27",
-  "2027-28",
-];
 
 // Helper: converts a number to words (digit-by-digit)
 const numberToWords = (num: number): string => {
@@ -136,9 +122,6 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  // NEW: Academic Year state
-  const [academicYear, setAcademicYear] = useState(academicYearOptions[0]);
-
   // Auto-save state
   const [autoSaving, setAutoSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
@@ -158,13 +141,6 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
     loadExistingScores();
   }, [course, students]);
 
-  // Get academic year from students
-  useEffect(() => {
-    if (students && students.length > 0 && students[0].academicYear) {
-      setAcademicYear(students[0].academicYear);
-    }
-  }, [students]);
-
   // Check if score entry is enabled
   useEffect(() => {
     const checkScoreEntryStatus = async () => {
@@ -181,11 +157,6 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
 
     checkScoreEntryStatus();
   }, []);
-
-  const handleAcademicYearChange = (event: any) => {
-    if (!user?.isAdmin) return; // Only proceed if user is admin
-    setAcademicYear(event.target.value);
-  };
 
   // Create the auto-save function with debounce
   const autoSave = useCallback(
@@ -226,7 +197,6 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
       assignmentScores,
       saving,
       scoreEntryEnabled,
-      academicYear, // Add academicYear to dependencies
     ]
   );
 
@@ -258,7 +228,6 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
     activeComponent,
     loading,
     autoSave,
-    academicYear, // Add academicYear to dependencies
   ]);
 
   const loadExistingScores = async () => {
@@ -275,11 +244,6 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
       const updatedLabScores: { [studentId: string]: LabScore } = {};
       const updatedAssignmentScores: { [studentId: string]: AssignmentScore } =
         {};
-
-      // If we have scores, set academicYear from the first score entry
-      if (existingScores.length > 0 && existingScores[0].academicYear) {
-        setAcademicYear(existingScores[0].academicYear);
-      }
 
       existingScores.forEach((scoreEntry: any) => {
         try {
@@ -355,8 +319,6 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
             Array.isArray(scoreEntry.questions) &&
             scoreEntry.questions.length > 0
           ) {
-            // Process questions and lab sessions...
-            // (This part remains unchanged from the original code)
             // Find all CA components in the scores array
             const caComponents: string[] = [];
             // Create a map to store test dates by component
@@ -561,14 +523,12 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
             );
           }
 
-          // Process lab sessions if available
+          // Process lab sessions if available - UPDATED FOR BETTER PERSISTENCE
           if (
             scoreEntry.lab_sessions &&
             Array.isArray(scoreEntry.lab_sessions) &&
             scoreEntry.lab_sessions.length > 0
           ) {
-            // Process lab sessions...
-            // (This part remains unchanged from the original code)
             // If student has a LAB component, update with sessions
             if (updatedLabScores[studentId]) {
               // Sort sessions by index to ensure proper ordering
@@ -741,7 +701,6 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
   };
 
   // UPDATED: Prepare scores for submission with proper test date handling
-  // Modified to use the global academicYear value
   const prepareScoresForSubmission = () => {
     const formattedScores: any[] = [];
 
@@ -891,7 +850,7 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
         if (studentScores.length > 0) {
           const studentData: any = {
             studentId: student._id,
-            academicYear: academicYear, // Use global academicYear
+            academicYear: student.academicYear,
             scores: studentScores,
             questions: aggregatedQuestions,
           };
@@ -961,14 +920,14 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
       const scaleConfig = getComponentScale(course.type, activeComponent);
       const maxMarks = scaleConfig.maxMarks;
 
-      // Remove Academic Year and Test Date from individual row headers
       const headers = [
         "SNo",
         "Enrollment No",
         "Name",
         "Program",
         "Semester",
-        // Academic Year and Test Date removed as they're in the header
+        "Academic Year",
+        "Test Date", // Added Test Date to headers
       ];
 
       const getTestDateForCA = (): string => {
@@ -1010,16 +969,13 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
       );
 
       const csvRows: (string | number)[][] = [];
-
-      // Prepend course info at the top including academic year and test date
+      // Prepend course info at the top
       csvRows.push([
         `Course Code: ${course.code}`,
         `Course Name: ${course.name}`,
         `Course Type: ${course.type}`,
-        `Academic Year: ${academicYear}`,
-        `Test Date: ${getTestDateForCA()}`,
+        `Test Date: ${getTestDateForCA()}`, // Add test date to the header info
       ]);
-
       csvRows.push([]);
       csvRows.push(headers);
 
@@ -1030,13 +986,14 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
           student.registrationNumber,
           student.name,
           student.program,
-          student.semester
-          // Academic Year and Test Date removed as they're in the header
+          student.semester,
+          student.academicYear
         );
-
         const caData = caScores[activeComponent]?.[student._id];
         if (caData) {
-          // Remove test date from individual rows
+          // Add test date to the row
+          row.push(caData.testDate || "");
+
           const order = ["I", "II", "III", "IV", "V"] as const;
           order.forEach((qKey) => {
             const qData = caData[qKey] as QuestionPartScores;
@@ -1057,9 +1014,9 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
             numberToWords(scaledScore as number)
           );
         } else {
-          // No empty test date cell needed
-          for (let i = 0; i < 25; i++) {
-            // Adjusted count for removed columns
+          row.push(""); // Empty test date
+          for (let i = 0; i < 27; i++) {
+            // Adjusted for testDate column
             row.push(0);
           }
         }
@@ -1079,168 +1036,128 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
       link.click();
       document.body.removeChild(link);
     }
-
     // --- LAB Export ---
     else if (activeComponent === "LAB") {
-      try {
-        // Get all lab sessions from all students and sort them by index
-        const allSessions: LabSession[] = [];
+      // Determine maximum number of lab sessions among all students
+      let maxSessions = 0;
+      students.forEach((student) => {
+        const labData = labScores[student._id];
+        if (
+          labData &&
+          labData.sessions &&
+          labData.sessions.length > maxSessions
+        ) {
+          maxSessions = labData.sessions.length;
+        }
+      });
 
-        students.forEach((student) => {
-          const labData = labScores[student._id];
-          if (labData?.sessions?.length > 0) {
-            labData.sessions.forEach((session) => {
-              if (session.date && session.index !== undefined) {
-                allSessions.push(session);
-              }
-            });
-          }
-        });
-
-        // Sort sessions by index and get unique dates
-        const sortedSessions = [...allSessions].sort((a, b) => {
-          const aIndex = a.index !== undefined ? a.index : 999;
-          const bIndex = b.index !== undefined ? b.index : 999;
-          return aIndex - bIndex;
-        });
-
-        // Get unique session indices while preserving order
-        const uniqueSessionIndices: number[] = [];
-        const sessionDatesByIndex: { [key: number]: string } = {};
-
-        sortedSessions.forEach((session) => {
-          if (
-            session.index !== undefined &&
-            !uniqueSessionIndices.includes(session.index)
-          ) {
-            uniqueSessionIndices.push(session.index);
-            sessionDatesByIndex[session.index] = session.date;
-          }
-        });
-
-        // Sort unique indices numerically
-        uniqueSessionIndices.sort((a, b) => a - b);
-
-        // Get LAB scale configuration
-        const scaleConfig = getComponentScale(course.type, "LAB");
-        const maxMarks = scaleConfig.maxMarks;
-
-        // Basic student info columns
-        const headers = ["SNo", "Enrollment No", "Name", "Program", "Semester"];
-
-        // Add lab session headers with dates
-        uniqueSessionIndices.forEach((index) => {
-          const date = sessionDatesByIndex[index] || "Unknown Date";
-          headers.push(`Lab Session ${index + 1} (${date})`);
-        });
-
-        // Add summary columns
-        headers.push(
-          "Overall Lab Score (Obtained)",
-          `Overall Lab Score (Max: ${maxMarks})`,
-          "Marks in Words"
-        );
-
-        const csvRows: (string | number)[][] = [];
-
-        // Include global academicYear in the header
-        csvRows.push([
-          `Course Code: ${course.code}`,
-          `Course Name: ${course.name}`,
-          `Course Type: ${course.type}`,
-          `Academic Year: ${academicYear}`,
-        ]);
-
-        csvRows.push([]);
-        csvRows.push(headers);
-
-        // Construct each row
-        students.forEach((student, index) => {
-          const row: (string | number)[] = [];
-          row.push(
-            index + 1,
-            student.registrationNumber,
-            student.name,
-            student.program,
-            student.semester
-          );
-
-          const labData = labScores[student._id];
-
-          if (labData && labData.sessions && labData.sessions.length > 0) {
-            // Create a map of session scores by index
-            const scoresByIndex: { [key: number]: number } = {};
-            labData.sessions.forEach((session) => {
-              if (session.index !== undefined) {
-                scoresByIndex[session.index] = session.obtainedMarks || 0;
-              }
-            });
-
-            // Add scores for each lab session in order
-            uniqueSessionIndices.forEach((index) => {
-              row.push(scoresByIndex[index] || 0);
-            });
-
-            // Add summary data
-            row.push(
-              labData.totalObtained || 0,
-              labData.maxMarks || maxMarks,
-              numberToWords(labData.totalObtained || 0)
-            );
-          } else {
-            // Empty scores for all sessions
-            uniqueSessionIndices.forEach(() => {
-              row.push(0);
-            });
-            row.push(0, maxMarks, "ZERO");
-          }
-          csvRows.push(row);
-        });
-
-        const csvString = csvRows.map((row) => row.join(",")).join("\n");
-        const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.setAttribute("download", `LAB_${course.code}_Scores.csv`);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      } catch (err) {
-        console.error("Error exporting LAB scores:", err);
-        setError("Failed to export LAB scores");
-      }
-    }
-
-    // --- ASSIGNMENT Export ---
-    else if (activeComponent === "ASSIGNMENT") {
-      // Get ASSIGNMENT scale configuration
-      const scaleConfig = getComponentScale(course.type, "ASSIGNMENT");
+      // Get LAB scale configuration
+      const scaleConfig = getComponentScale(course.type, "LAB");
       const maxMarks = scaleConfig.maxMarks;
 
-      // Remove Academic Year as it's in the header
+      // Construct headers: basic student info + dynamic lab session columns (only Date and Obtained)
       const headers = [
         "SNo",
         "Enrollment No",
         "Name",
         "Program",
         "Semester",
-        // Academic Year removed as it's in the header
-        "Assignment Obtained",
-        `Assignment Max Marks (${maxMarks})`,
-        "Marks in Words",
+        "Academic Year",
       ];
+      for (let i = 1; i <= maxSessions; i++) {
+        headers.push(`Lab Session ${i} Date`, `Lab Session ${i} Obtained`);
+      }
+      headers.push(
+        "Overall Lab Score (Obtained)",
+        `Overall Lab Score (Max: ${maxMarks})`,
+        "Marks in Words"
+      );
 
       const csvRows: (string | number)[][] = [];
-
-      // Include global academicYear in the header
       csvRows.push([
         `Course Code: ${course.code}`,
         `Course Name: ${course.name}`,
         `Course Type: ${course.type}`,
-        `Academic Year: ${academicYear}`,
       ]);
+      csvRows.push([]);
+      csvRows.push(headers);
 
+      // Construct each row
+      students.forEach((student, index) => {
+        const row: (string | number)[] = [];
+        row.push(
+          index + 1,
+          student.registrationNumber,
+          student.name,
+          student.program,
+          student.semester,
+          student.academicYear
+        );
+        const labData = labScores[student._id];
+
+        if (labData && labData.sessions && labData.sessions.length > 0) {
+          // Sort sessions by index to ensure consistent ordering
+          const sortedSessions = [...labData.sessions].sort((a, b) => {
+            const aIndex = a.index !== undefined ? a.index : 999;
+            const bIndex = b.index !== undefined ? b.index : 999;
+            return aIndex - bIndex;
+          });
+
+          for (let i = 0; i < maxSessions; i++) {
+            if (i < sortedSessions.length) {
+              const session = sortedSessions[i];
+              row.push(session.date, session.obtainedMarks || 0);
+            } else {
+              row.push("", 0);
+            }
+          }
+          row.push(
+            labData.totalObtained || 0,
+            labData.maxMarks || maxMarks,
+            numberToWords(labData.totalObtained || 0)
+          );
+        } else {
+          for (let i = 0; i < maxSessions; i++) {
+            row.push("", 0);
+          }
+          row.push(0, maxMarks, "ZERO");
+        }
+        csvRows.push(row);
+      });
+
+      const csvString = csvRows.map((row) => row.join(",")).join("\n");
+      const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `LAB_${course.code}_Scores.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+    // --- ASSIGNMENT Export ---
+    else if (activeComponent === "ASSIGNMENT") {
+      // Get ASSIGNMENT scale configuration
+      const scaleConfig = getComponentScale(course.type, "ASSIGNMENT");
+      const maxMarks = scaleConfig.maxMarks;
+
+      const headers = [
+        "SNo",
+        "Enrollment No",
+        "Name",
+        "Program",
+        "Semester",
+        "Academic Year",
+        "Assignment Obtained",
+        `Assignment Max Marks (${maxMarks})`,
+        "Marks in Words",
+      ];
+      const csvRows: (string | number)[][] = [];
+      csvRows.push([
+        `Course Code: ${course.code}`,
+        `Course Name: ${course.name}`,
+        `Course Type: ${course.type}`,
+      ]);
       csvRows.push([]);
       csvRows.push(headers);
 
@@ -1251,10 +1168,9 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
           student.registrationNumber,
           student.name,
           student.program,
-          student.semester
-          // Academic Year removed as it's in the header
+          student.semester,
+          student.academicYear
         );
-
         const assignData = assignmentScores[student._id];
         if (assignData) {
           row.push(
@@ -1301,23 +1217,20 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
           // Set up headers with careful string formatting
           const csvRows = [];
 
-          // Add metadata row with global academicYear
+          // Add metadata row
           csvRows.push(
             `${escapeCSV("Course Code")}: ${escapeCSV(course.code)},${escapeCSV(
               "Course Name"
             )}: ${escapeCSV(course.name)},${escapeCSV(
               "Course Type"
-            )}: ${escapeCSV(course.type)},${escapeCSV(
-              "Academic Year"
-            )}: ${escapeCSV(academicYear)}`
+            )}: ${escapeCSV(course.type)}`
           );
-
           csvRows.push("");
 
-          // Define column headers - remove Academic Year
+          // Define column headers
           const headers = [];
           headers.push(escapeCSV("SNo."));
-          // Academic Year removed as it's in the header
+          headers.push(escapeCSV("Academic_Year"));
           headers.push(escapeCSV("Program"));
           headers.push(escapeCSV("Enrollment No."));
           headers.push(escapeCSV("Name"));
@@ -1385,9 +1298,9 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
           students.forEach((student, index) => {
             const rowData = [];
 
-            // Add basic student info - remove Academic Year
+            // Add basic student info
             rowData.push(escapeCSV(index + 1));
-            // Academic Year removed as it's in the header
+            rowData.push(escapeCSV(student.academicYear));
             rowData.push(escapeCSV(student.program));
             rowData.push(escapeCSV(student.registrationNumber));
             rowData.push(escapeCSV(student.name));
@@ -1458,6 +1371,8 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
       })();
     }
   };
+
+  // ======================================
 
   const renderComponent = () => {
     if (activeComponent === "TOTAL") {
@@ -1585,33 +1500,6 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
               </Button>
             </Grid>
           </Grid>
-
-          <Box sx={{ mb: 3 }}>
-            <FormControl sx={{ width: 200, mb: 2 }}>
-              <InputLabel id="academic-year-label">Academic Year</InputLabel>
-              <Select
-                labelId="academic-year-label"
-                value={academicYear}
-                onChange={handleAcademicYearChange}
-                label="Academic Year"
-                disabled={!user?.isAdmin} // Only admin can change the academic year
-              >
-                {academicYearOptions.map((year) => (
-                  <MenuItem key={year} value={year}>
-                    {year}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            <Typography
-              variant="caption"
-              sx={{ ml: 2, color: "text.secondary" }}
-            >
-              {user?.isAdmin
-                ? "All scores will be saved with this academic year"
-                : ""}
-            </Typography>
-          </Box>
 
           {/* Score entry disabled warning */}
           {!scoreEntryEnabled && (

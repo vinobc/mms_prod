@@ -1115,10 +1115,10 @@ const CourseStudentsTable: React.FC<CourseStudentsTableProps> = ({
     }
   };
 
+  // Handle academic year change
   const handleAcademicYearChange = (
     e: React.ChangeEvent<{ value: unknown }>
   ) => {
-    if (!isAdmin) return; // Only proceed if user is admin
     setAcademicYear(e.target.value as string);
   };
 
@@ -1649,6 +1649,7 @@ const CourseStudentsTable: React.FC<CourseStudentsTableProps> = ({
         </Box>
       </Box>
 
+      {/* NEW: Academic Year selector */}
       <Box sx={{ mb: 3 }}>
         <FormControl sx={{ width: 200 }}>
           <InputLabel id="academic-year-label">Academic Year</InputLabel>
@@ -1657,7 +1658,6 @@ const CourseStudentsTable: React.FC<CourseStudentsTableProps> = ({
             value={academicYear}
             onChange={handleAcademicYearChange}
             label="Academic Year"
-            disabled={!isAdmin} // Only admin can change the academic year
           >
             {academicYearOptions.map((year) => (
               <MenuItem key={year} value={year}>
@@ -1667,7 +1667,7 @@ const CourseStudentsTable: React.FC<CourseStudentsTableProps> = ({
           </Select>
         </FormControl>
         <Typography variant="caption" sx={{ ml: 2, color: "text.secondary" }}>
-          {isAdmin ? "All students will be assigned to this academic year" : ""}
+          All students will be assigned to academic year: {academicYear}
         </Typography>
       </Box>
 
