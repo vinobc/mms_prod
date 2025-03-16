@@ -1,5 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Typography,
   Box,
@@ -25,6 +24,7 @@ import {
   CircularProgress,
   Tooltip,
   Chip,
+  InputLabel,
 } from "@mui/material";
 import {
   Add as AddIcon,
@@ -32,7 +32,6 @@ import {
   Save as SaveIcon,
   Edit as EditIcon,
   DeleteForever as DeleteForeverIcon,
-  // RestoreFromTrash as RestoreIcon,
 } from "@mui/icons-material";
 import { Course, ProgramType } from "../../types";
 import { studentService } from "../../services/studentService";
@@ -53,9 +52,9 @@ const programOptions = [
   "B.Com.",
   "B.Tech (CSE)",
   "B.Tech (AI&ML)",
-  "B.Tech CSE (AI & ML)",  
+  "B.Tech CSE (AI & ML)",
   "B.Tech CSE (IoT)",
-  "B.Tech CSE (Robotics)",    
+  "B.Tech CSE (Robotics)",
   "B.Tech.(Biotechnology)",
   "B.Pharm",
   "BA Applied Psychology",
@@ -84,7 +83,6 @@ interface StudentRow {
   name: string;
   program: string;
   semester: number;
-  academicYear: string;
   isNew: boolean; // Flag for new vs existing students
   isSaving?: boolean; // Loading state indicator
   isEditing?: boolean; // UI editing state
@@ -112,6 +110,9 @@ const CourseStudentsTable: React.FC<CourseStudentsTableProps> = ({
     onConfirm: () => {},
   });
 
+  // NEW: Global academic year state
+  const [academicYear, setAcademicYear] = useState(academicYearOptions[0]);
+
   // Get current user
   const { user } = useAuth();
   const isAdmin = user?.isAdmin || false;
@@ -134,7 +135,6 @@ const CourseStudentsTable: React.FC<CourseStudentsTableProps> = ({
       );
 
       // Transform API data to component format
-
       const studentRows = courseStudents.map((student: any) => ({
         id: student._id,
         _id: student._id,
@@ -142,19 +142,30 @@ const CourseStudentsTable: React.FC<CourseStudentsTableProps> = ({
         name: student.name,
         program: student.program || programOptions[0],
         semester: student.semester,
-        academicYear: student.academicYear,
         isNew: false,
         isSaving: false,
         isEditing: false,
       }));
 
       setStudents(studentRows);
+
+      // If we have students, set academicYear from the first student
+      if (studentRows.length > 0 && courseStudents[0].academicYear) {
+        setAcademicYear(courseStudents[0].academicYear);
+      }
     } catch (error) {
       console.error("Failed to load students:", error);
       setError("Could not load students. Please try again.");
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleAcademicYearChange = (
+    e: React.ChangeEvent<{ value: unknown }>
+  ) => {
+    if (!isAdmin) return; // Only proceed if user is admin
+    setAcademicYear(e.target.value as string);
   };
 
   // Add an empty row for a new student
@@ -166,7 +177,6 @@ const CourseStudentsTable: React.FC<CourseStudentsTableProps> = ({
       name: "",
       program: programOptions[0],
       semester: 1,
-      academicYear: academicYearOptions[0],
       isNew: true,
       isEditing: true,
     };
@@ -229,7 +239,7 @@ const CourseStudentsTable: React.FC<CourseStudentsTableProps> = ({
               name: student.name,
               program: student.program as ProgramType,
               semester: student.semester,
-              academicYear: student.academicYear,
+              academicYear: academicYear, // Use the global academic year
               courseIds: [courseId],
             });
             setSuccess("New student added successfully");
@@ -240,10 +250,9 @@ const CourseStudentsTable: React.FC<CourseStudentsTableProps> = ({
         }
       } else {
         // For existing students
-
         const updateData: any = {
           semester: student.semester,
-          academicYear: student.academicYear,
+          academicYear: academicYear, // Use the global academic year
         };
 
         // If admin, allow updating all fields
@@ -527,7 +536,7 @@ const CourseStudentsTable: React.FC<CourseStudentsTableProps> = ({
     setConfirmDialog({
       open: true,
       title: "Save All Students",
-      message: `Are you sure you want to save all ${students.length} students?`,
+      message: `Are you sure you want to save all ${students.length} students with academic year ${academicYear}?`,
       onConfirm: confirmSaveAll,
     });
   };
@@ -563,7 +572,7 @@ const CourseStudentsTable: React.FC<CourseStudentsTableProps> = ({
                 name: student.name,
                 program: student.program as ProgramType,
                 semester: student.semester,
-                academicYear: student.academicYear,
+                academicYear: academicYear, // Use global academic year
                 courseIds: [course._id],
               });
             }
@@ -571,7 +580,7 @@ const CourseStudentsTable: React.FC<CourseStudentsTableProps> = ({
             // For existing students
             const updateData: any = {
               semester: student.semester,
-              academicYear: student.academicYear,
+              academicYear: academicYear, // Use global academic year
             };
 
             // If admin, allow updating all fields
@@ -686,6 +695,28 @@ const CourseStudentsTable: React.FC<CourseStudentsTableProps> = ({
         </Box>
       </Box>
 
+      <Box sx={{ mb: 3 }}>
+        <FormControl sx={{ width: 200 }}>
+          <InputLabel id="academic-year-label">Academic Year</InputLabel>
+          <Select
+            labelId="academic-year-label"
+            value={academicYear}
+            onChange={handleAcademicYearChange}
+            label="Academic Year"
+            disabled={!isAdmin} // Only admin can change the academic year
+          >
+            {academicYearOptions.map((year) => (
+              <MenuItem key={year} value={year}>
+                {year}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+        <Typography variant="caption" sx={{ ml: 2, color: "text.secondary" }}>
+          {isAdmin ? "All students will be assigned to this academic year" : ""}
+        </Typography>
+      </Box>
+
       {/* Students table */}
       <TableContainer component={Paper}>
         <Table size="small">
@@ -694,9 +725,8 @@ const CourseStudentsTable: React.FC<CourseStudentsTableProps> = ({
               <TableCell width="5%">SNo.</TableCell>
               <TableCell width="15%">Program</TableCell>
               <TableCell width="20%">Enrollment No.</TableCell>
-              <TableCell width="20%">Name</TableCell>
+              <TableCell width="25%">Name</TableCell>
               <TableCell width="10%">Semester</TableCell>
-              <TableCell width="15%">Academic Year</TableCell>
               <TableCell width="15%">Actions</TableCell>
             </TableRow>
           </TableHead>
@@ -795,32 +825,6 @@ const CourseStudentsTable: React.FC<CourseStudentsTableProps> = ({
                   )}
                 </TableCell>
 
-                {/* Academic Year field - always editable when in edit mode */}
-                <TableCell>
-                  {student.isEditing ? (
-                    <FormControl fullWidth size="small">
-                      <Select
-                        value={student.academicYear}
-                        onChange={(e) =>
-                          handleFieldChange(
-                            student.id,
-                            "academicYear",
-                            e.target.value
-                          )
-                        }
-                      >
-                        {academicYearOptions.map((year) => (
-                          <MenuItem key={year} value={year}>
-                            {year}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-                  ) : (
-                    student.academicYear
-                  )}
-                </TableCell>
-
                 {/* Action buttons */}
                 <TableCell>
                   <Box sx={{ display: "flex", gap: 1 }}>
@@ -873,7 +877,7 @@ const CourseStudentsTable: React.FC<CourseStudentsTableProps> = ({
             ))}
             {students.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} align="center" sx={{ py: 4 }}>
+                <TableCell colSpan={6} align="center" sx={{ py: 4 }}>
                   No students available. Click "Add Student" to add students.
                 </TableCell>
               </TableRow>

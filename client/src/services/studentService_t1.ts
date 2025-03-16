@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import api from "./api";
-import { Student, ProgramType } from "../types";
+import { Student } from "../types";
 
 // Cache for storing recently retrieved students by registration number
 const studentCache = {
@@ -18,22 +18,6 @@ const studentCache = {
   },
   clear: () => {
     studentCache.data = {};
-  },
-  // New method to check if any student in cache matches a search term
-  search: (term: string) => {
-    const results: any[] = [];
-    const termLower = term.toLowerCase();
-
-    Object.values(studentCache.data).forEach((student) => {
-      if (
-        student.registrationNumber.toLowerCase().includes(termLower) ||
-        student.name.toLowerCase().includes(termLower)
-      ) {
-        results.push(student);
-      }
-    });
-
-    return results;
   },
 };
 
@@ -155,6 +139,15 @@ export const studentService = {
     } catch (error) {
       console.error("Error creating student:", error);
 
+      // Handle special case for existing student
+      // if (error.response?.status === 409) {
+      //   throw new Error(
+      //     `Student with registration number ${studentData.registrationNumber} already exists.`
+      //   );
+      // }
+
+      // throw error;
+
       if ((error as any).response?.status === 409) {
         throw new Error(
           `Student with registration number ${studentData.registrationNumber} already exists.`
@@ -274,8 +267,10 @@ export const studentService = {
 
       // Ensure each student has the required fields and proper courseIds
       const data = students.map((student) => {
-        if (!student.registrationNumber) {
-          throw new Error("All students must have registration number");
+        if (!student.registrationNumber || !student.name) {
+          throw new Error(
+            "All students must have registration number and name"
+          );
         }
 
         return {
@@ -305,63 +300,20 @@ export const studentService = {
         return [];
       }
 
-      // Check cache first for quicker responses
-      const cachedResults = studentCache.search(keyword);
-      if (cachedResults.length > 0) {
-        console.log("Using cached search results for:", keyword);
-        return cachedResults;
-      }
-
-      // For a more robust implementation in production, you would create a dedicated
-      // backend endpoint for searching. For now, we'll fetch all students and filter.
+      // For now, we'll fetch all students and filter on the client
+      // In a real implementation, this would be a proper API endpoint
       const allStudents = await studentService.getAllStudents();
 
       // Filter by name or registration number
-      const lowercasedTerm = keyword.toLowerCase();
-      const results = allStudents.filter(
+      return allStudents.filter(
         (student: any) =>
-          student.name.toLowerCase().includes(lowercasedTerm) ||
-          student.registrationNumber.toLowerCase().includes(lowercasedTerm)
+          student.name.toLowerCase().includes(keyword.toLowerCase()) ||
+          student.registrationNumber
+            .toLowerCase()
+            .includes(keyword.toLowerCase())
       );
-
-      // Cache individual students from the results
-      results.forEach((student: any) => {
-        studentCache.set(student.registrationNumber, student);
-      });
-
-      return results;
     } catch (error) {
       console.error(`Error searching students:`, error);
-      throw error;
-    }
-  },
-
-  // Import students from Excel file format
-  importStudentsFromExcelData: async (
-    data: Array<{
-      enrollmentNumber: string;
-      name: string;
-      program: string;
-      school?: string;
-      semester?: number;
-      academicYear?: string;
-    }>
-  ) => {
-    try {
-      // Transform Excel data to student format
-      const students = data.map((row) => ({
-        registrationNumber: row.enrollmentNumber,
-        name: row.name,
-        program: row.program as ProgramType,
-        semester: row.semester || 1,
-        academicYear: row.academicYear || "2023-24",
-        courseIds: [], // Empty courseIds as we're just importing the student record
-      }));
-
-      // Use the bulk create endpoint
-      return await studentService.bulkCreateStudents(students);
-    } catch (error) {
-      console.error("Error importing students from Excel data:", error);
       throw error;
     }
   },

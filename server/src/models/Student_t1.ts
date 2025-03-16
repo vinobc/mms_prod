@@ -5,9 +5,9 @@ export type ProgramType =
   | "B.Com."
   | "B.Tech (CSE)"
   | "B.Tech (AI&ML)"
-  | "B.Tech CSE (AI & ML)"
+  | "B.Tech CSE (AI & ML)"  
   | "B.Tech CSE (IoT)"
-  | "B.Tech CSE (Robotics)"
+  | "B.Tech CSE (Robotics)"      
   | "B.Tech.(Biotechnology)"
   | "B.Pharm"
   | "BA Applied Psychology"
@@ -31,7 +31,6 @@ export interface IStudent extends Document {
   registrationNumber: string;
   name: string;
   program: ProgramType;
-  school?: string; // Added school field
   courseIds: mongoose.Types.ObjectId[];
   semester: number;
   academicYear: string;
@@ -44,9 +43,9 @@ const programTypes = [
   "B.Com.",
   "B.Tech (CSE)",
   "B.Tech (AI&ML)",
-  "B.Tech CSE (AI & ML)",
+  "B.Tech CSE (AI & ML)",  
   "B.Tech CSE (IoT)",
-  "B.Tech CSE (Robotics)",
+  "B.Tech CSE (Robotics)",      
   "B.Tech.(Biotechnology)",
   "B.Pharm",
   "BA Applied Psychology",
@@ -84,30 +83,11 @@ const StudentSchema: Schema = new Schema(
     program: {
       type: String,
       required: [true, "Program is required"],
-      validate: {
-        validator: function (v: string) {
-          // Allow any of the predefined program types
-          if (programTypes.includes(v)) {
-            return true;
-          }
-
-          // Convert to uppercase for case-insensitive comparison
-          const upperValue = v.toUpperCase();
-          const upperProgramTypes = programTypes.map((p) => p.toUpperCase());
-
-          // Check if it's a close match
-          return upperProgramTypes.some(
-            (p) => upperValue.includes(p) || p.includes(upperValue)
-          );
-        },
+      enum: {
+        values: programTypes,
         message:
-          "Invalid program type. Please use one of the standard program formats.",
+          "Invalid program type, please select from the predefined options",
       },
-    },
-    school: {
-      type: String,
-      trim: true,
-      // Not required
     },
     courseIds: [
       {
@@ -143,6 +123,30 @@ StudentSchema.index({ courseIds: 1 });
 StudentSchema.index({ academicYear: 1 });
 
 // Pre-save hook to ensure registrationNumber is unique
+// StudentSchema.pre("validate", async function (next) {
+//   try {
+//     const student = this as IStudent;
+
+//     // Check if there's an existing student with the same registration number
+//     // (but different ID, to allow updates to existing records)
+//     const existingStudent = await mongoose.model("Student").findOne({
+//       registrationNumber: student.registrationNumber,
+//       _id: { $ne: student._id }, // Exclude current student
+//     });
+
+//     if (existingStudent) {
+//       const error = new Error(
+//         `A student with registration number ${student.registrationNumber} already exists`
+//       );
+//       next(error);
+//     } else {
+//       next();
+//     }
+//   } catch (error) {
+//     next(error);
+//   }
+// });
+
 StudentSchema.pre("validate", async function (next) {
   try {
     const student = this as IStudent;

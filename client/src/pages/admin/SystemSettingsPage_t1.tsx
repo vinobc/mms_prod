@@ -12,19 +12,12 @@ import {
   CardContent,
   CircularProgress,
   Divider,
-  Button,
 } from "@mui/material";
 import {
   systemSettingService,
   SystemSetting,
 } from "../../services/systemSettingService";
 import { useAuth } from "../../context/AuthContext";
-import { Link, useNavigate } from "react-router-dom";
-import {
-  People as PeopleIcon,
-  Settings as SettingsIcon,
-  School as SchoolIcon,
-} from "@mui/icons-material";
 
 const SystemSettingsPage: React.FC = () => {
   const [settings, setSettings] = useState<SystemSetting[]>([]);
@@ -33,7 +26,6 @@ const SystemSettingsPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const { user } = useAuth();
-  const navigate = useNavigate();
 
   // Fetch settings on component mount
   useEffect(() => {
@@ -83,10 +75,6 @@ const SystemSettingsPage: React.FC = () => {
     }
   };
 
-  const navigateToStudentManagement = () => {
-    navigate("/admin/students");
-  };
-
   if (!user?.isAdmin) {
     return (
       <Alert severity="error">
@@ -117,23 +105,19 @@ const SystemSettingsPage: React.FC = () => {
         </Alert>
       )}
 
-      <Grid container spacing={3}>
-        {/* Score Entry Control */}
-        <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 3, mb: 4, height: "100%" }}>
-            <Box display="flex" alignItems="center" mb={2}>
-              <SettingsIcon color="primary" sx={{ mr: 1 }} />
-              <Typography variant="h5" gutterBottom>
-                Score Entry Control
-              </Typography>
-            </Box>
-            <Divider sx={{ mb: 3 }} />
+      <Paper sx={{ p: 3, mb: 4 }}>
+        <Typography variant="h5" gutterBottom>
+          Score Entry Control
+        </Typography>
+        <Divider sx={{ mb: 3 }} />
 
-            {loading ? (
-              <Box display="flex" justifyContent="center" my={3}>
-                <CircularProgress />
-              </Box>
-            ) : (
+        {loading ? (
+          <Box display="flex" justifyContent="center" my={3}>
+            <CircularProgress />
+          </Box>
+        ) : (
+          <Grid container spacing={3}>
+            <Grid item xs={12}>
               <Card variant="outlined">
                 <CardContent>
                   <Typography color="textSecondary" gutterBottom>
@@ -160,44 +144,10 @@ const SystemSettingsPage: React.FC = () => {
                   />
                 </CardContent>
               </Card>
-            )}
-          </Paper>
-        </Grid>
-
-        {/* Student Management */}
-        <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 3, mb: 4, height: "100%" }}>
-            <Box display="flex" alignItems="center" mb={2}>
-              <PeopleIcon color="primary" sx={{ mr: 1 }} />
-              <Typography variant="h5" gutterBottom>
-                Student Management
-              </Typography>
-            </Box>
-            <Divider sx={{ mb: 3 }} />
-
-            <Card variant="outlined">
-              <CardContent>
-                <Typography color="textSecondary" gutterBottom>
-                  Global Student Database
-                </Typography>
-                <Typography variant="body2" component="p" sx={{ mb: 2 }}>
-                  Manage all students in the system. Import students from Excel,
-                  add, edit, or remove students.
-                </Typography>
-                <Button
-                  variant="contained"
-                  color="primary"
-                  startIcon={<SchoolIcon />}
-                  onClick={navigateToStudentManagement}
-                  fullWidth
-                >
-                  Manage Students
-                </Button>
-              </CardContent>
-            </Card>
-          </Paper>
-        </Grid>
-      </Grid>
+            </Grid>
+          </Grid>
+        )}
+      </Paper>
 
       {/* Display all system settings for debugging/advanced users */}
       {settings.length > 0 && (

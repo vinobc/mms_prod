@@ -16,8 +16,6 @@ import FacultyManagementPage from "./pages/admin/FacultyManagementPage";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import { AuthProvider } from "./context/AuthContext";
 import SystemSettingsPage from "./pages/admin/SystemSettingsPage";
-// Import the new component
-import GlobalStudentManagement from "./components/admin/GlobalStudentManagement";
 
 const theme = createTheme({
   palette: {
@@ -59,11 +57,6 @@ function App() {
                 <Route
                   path="/admin/settings"
                   element={<SystemSettingsPage />}
-                />
-                {/* Add the new route for student management */}
-                <Route
-                  path="/admin/students"
-                  element={<GlobalStudentManagement />}
                 />
               </Route>
 

@@ -53,9 +53,9 @@ export type ProgramType =
   | "B.Com."
   | "B.Tech (CSE)"
   | "B.Tech (AI&ML)"
-  | "B.Tech CSE (AI & ML)"
+  | "B.Tech CSE (AI & ML)"  
   | "B.Tech CSE (IoT)"
-  | "B.Tech CSE (Robotics)"
+  | "B.Tech CSE (Robotics)"     
   | "B.Tech.(Biotechnology)"
   | "B.Pharm"
   | "BA Applied Psychology"
@@ -98,7 +98,6 @@ export interface Student {
   registrationNumber: string;
   name: string;
   program: ProgramType;
-  school?: string; // Added school field
   courseIds: string[];
   semester: number;
   academicYear: string;

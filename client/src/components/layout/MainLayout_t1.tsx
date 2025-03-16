@@ -26,7 +26,6 @@ import {
   AccountCircle as AccountCircleIcon,
   Logout as LogoutIcon,
   Settings as SettingsIcon,
-  Group as GroupIcon, // Added for Student Database
 } from "@mui/icons-material";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
@@ -100,12 +99,6 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
       text: "Faculty Management",
       icon: <PeopleIcon />,
       path: "/admin/faculty",
-      adminOnly: true,
-    },
-    {
-      text: "Student Database", // New entry for Student Database
-      icon: <GroupIcon />,
-      path: "/admin/students",
       adminOnly: true,
     },
     {
@@ -244,7 +237,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                   <Avatar
                     sx={{ width: 28, height: 28, bgcolor: "primary.dark" }}
                   >
-                    {user?.name ? user.name.charAt(0).toUpperCase() : "U"}
+                    {user.name.charAt(0).toUpperCase()}
                   </Avatar>
                 }
               >
