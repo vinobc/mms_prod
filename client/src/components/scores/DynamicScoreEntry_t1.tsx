@@ -21,7 +21,6 @@ import { scoreService } from "../../services/scoreService";
 import { systemSettingService } from "../../services/systemSettingService";
 import { studentService } from "../../services/studentService";
 import CAScoreEntryComponent from "./CAScoreEntryComponent";
-import CAConfigComponent from "./CAConfigComponent"; // Import CAConfigComponent
 import LabScoreEntryComponent from "./LabScoreEntryComponent";
 import AssignmentScoreEntryComponent from "./AssignmentScoreEntryComponent";
 import TotalScoreComponent from "./TotalScoreComponent";
@@ -32,7 +31,6 @@ import {
 } from "../../utils/scoreUtils";
 import { useAuth } from "../../context/AuthContext";
 import { useRef } from "react";
-import format from "date-fns/format";
 
 // Academic year options
 const academicYearOptions = [
@@ -117,9 +115,6 @@ interface AssignmentScore {
 type QuestionKey = "I" | "II" | "III" | "IV" | "V";
 const questionKeys: QuestionKey[] = ["I", "II", "III", "IV", "V"];
 
-// Date format for consistency
-const DATE_FORMAT = "dd/MM/yyyy";
-
 const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
   course,
   students,
@@ -140,14 +135,8 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [needsConfiguration, setNeedsConfiguration] = useState<string | null>(
-    null
-  );
 
-  // NEW: State for tracking reconfiguration - moved to top level
-  const [isReconfiguring, setIsReconfiguring] = useState<boolean>(false);
-
-  // Academic Year state
+  // NEW: Academic Year state
   const [academicYear, setAcademicYear] = useState(academicYearOptions[0]);
 
   // Auto-save state
@@ -192,51 +181,6 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
 
     checkScoreEntryStatus();
   }, []);
-
-  // NEW: Handle reconfiguration with confirmation
-  const handleReconfigure = () => {
-    if (
-      window.confirm(
-        "Reconfiguring will reset all existing scores to zero. Are you sure you want to continue?"
-      )
-    ) {
-      setIsReconfiguring(true);
-    }
-  };
-
-  // NEW: Handle config saved event and reset scores if needed
-  const handleConfigSaved = () => {
-    // Reset reconfiguring state
-    setIsReconfiguring(false);
-
-    // If we were reconfiguring, we need to clear existing scores
-    if (isReconfiguring && activeComponent.startsWith("CA")) {
-      // Reset scores for this component
-      const emptyScores: DetailedScore = {};
-
-      // Keep same students but with zeroed scores
-      (students || []).forEach((student) => {
-        if (student && student._id) {
-          emptyScores[student._id] = {
-            I: { a: 0, b: 0, c: 0, d: 0, total: 0 },
-            II: { a: 0, b: 0, c: 0, d: 0, total: 0 },
-            III: { a: 0, b: 0, c: 0, d: 0, total: 0 },
-            IV: { a: 0, b: 0, c: 0, d: 0, total: 0 },
-            V: { a: 0, b: 0, c: 0, d: 0, total: 0 },
-            outOf50: 0,
-            outOf20: 0,
-            testDate: format(new Date(), DATE_FORMAT),
-          };
-        }
-      });
-
-      // Update the scores state
-      handleCAScoreChange(activeComponent, emptyScores);
-    }
-
-    // Reload the course to get fresh configuration
-    if (onSaveComplete) onSaveComplete();
-  };
 
   const handleAcademicYearChange = (event: any) => {
     if (!user?.isAdmin) return; // Only proceed if user is admin
@@ -796,7 +740,8 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
     setAssignmentScores(scores);
   };
 
-  // UPDATED: Prepare scores for submission with proper test date and part weights
+  // UPDATED: Prepare scores for submission with proper test date handling
+  // Modified to use the global academicYear value
   const prepareScoresForSubmission = () => {
     const formattedScores: any[] = [];
 
@@ -806,36 +751,11 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
         let aggregatedQuestions: any[] = [];
         let labSessions: any[] = [];
 
-        // Process CA scores (CA1, CA2, CA3) - Now with testDate and partWeights
+        // Process CA scores (CA1, CA2, CA3) - Now with testDate
         Object.keys(caScores).forEach((componentName) => {
           if (caScores[componentName] && caScores[componentName][student._id]) {
             const studentScore = caScores[componentName][student._id];
             const questions: any[] = [];
-
-            // Get component configuration for part weights
-            const componentConfig = course?.componentConfigs?.[componentName];
-            const partWeights = componentConfig?.partWeights || {
-              Ia: 2.5,
-              Ib: 2.5,
-              Ic: 2.5,
-              Id: 2.5,
-              IIa: 2.5,
-              IIb: 2.5,
-              IIc: 2.5,
-              IId: 2.5,
-              IIIa: 2.5,
-              IIIb: 2.5,
-              IIIc: 2.5,
-              IIId: 2.5,
-              IVa: 2.5,
-              IVb: 2.5,
-              IVc: 2.5,
-              IVd: 2.5,
-              Va: 2.5,
-              Vb: 2.5,
-              Vc: 2.5,
-              Vd: 2.5,
-            };
 
             // Extract testDate from student score data
             const testDate = studentScore.testDate || "";
@@ -858,43 +778,34 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
                   actualQuestionNumber += 10;
                 }
 
-                // Add parts with their configured weights
-                const parts = [];
-
-                // Get the weight for each part
-                const aWeight = partWeights[`${questionNum}a`] || 2.5;
-                const bWeight = partWeights[`${questionNum}b`] || 2.5;
-                const cWeight = partWeights[`${questionNum}c`] || 2.5;
-                const dWeight = partWeights[`${questionNum}d`] || 2.5;
-
-                parts.push({
-                  partName: "a",
-                  maxMarks: aWeight,
-                  obtainedMarks: questionScores.a || 0,
-                });
-                parts.push({
-                  partName: "b",
-                  maxMarks: bWeight,
-                  obtainedMarks: questionScores.b || 0,
-                });
-                parts.push({
-                  partName: "c",
-                  maxMarks: cWeight,
-                  obtainedMarks: questionScores.c || 0,
-                });
-                parts.push({
-                  partName: "d",
-                  maxMarks: dWeight,
-                  obtainedMarks: questionScores.d || 0,
-                });
-
                 questions.push({
                   questionNumber: actualQuestionNumber,
                   meta: {
                     component: componentName,
                     date: testDate, // Include test date in meta
                   },
-                  parts,
+                  parts: [
+                    {
+                      partName: "a",
+                      maxMarks: 5,
+                      obtainedMarks: questionScores.a || 0,
+                    },
+                    {
+                      partName: "b",
+                      maxMarks: 5,
+                      obtainedMarks: questionScores.b || 0,
+                    },
+                    {
+                      partName: "c",
+                      maxMarks: 5,
+                      obtainedMarks: questionScores.c || 0,
+                    },
+                    {
+                      partName: "d",
+                      maxMarks: 5,
+                      obtainedMarks: questionScores.d || 0,
+                    },
+                  ],
                 });
               }
             });
@@ -1548,7 +1459,6 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
     }
   };
 
-  // UPDATED: Modified renderComponent to use the state and handlers from the top level
   const renderComponent = () => {
     if (activeComponent === "TOTAL") {
       return (
@@ -1559,36 +1469,15 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
         />
       );
     } else if (activeComponent.startsWith("CA")) {
-      // Check if component needs configuration first
-      const componentConfig = course?.componentConfigs?.[activeComponent];
-
-      // If component isn't configured yet or we're reconfiguring, show configuration screen
-      if (
-        !componentConfig ||
-        !componentConfig.isConfigured ||
-        isReconfiguring
-      ) {
-        return (
-          <CAConfigComponent
-            course={course}
-            componentName={activeComponent}
-            onConfigSaved={handleConfigSaved}
-          />
-        );
-      }
-
-      // If configured, continue to score entry with course-specific config
       return (
         <CAScoreEntryComponent
           students={students}
           componentName={activeComponent}
           courseType={course.type}
-          courseConfig={course.componentConfigs?.[activeComponent]} // Pass course-specific config
           onScoresChange={(scores) =>
             handleCAScoreChange(activeComponent, scores)
           }
           initialScores={caScores[activeComponent]}
-          onReconfigure={handleReconfigure} // Pass the reconfigure handler
         />
       );
     } else if (activeComponent === "LAB") {

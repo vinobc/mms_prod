@@ -4,43 +4,136 @@ interface ComponentScaleConfig {
   maxMarks: number; // Maximum marks for this component
   passingMarks: number; // Passing threshold
   conversionFactor?: number; // For CA components: how to convert from the 50-point scale
+  partWeights?: {
+    // NEW: Support for individual part weights
+    Ia: number;
+    Ib: number;
+    Ic: number;
+    Id: number;
+    IIa: number;
+    IIb: number;
+    IIc: number;
+    IId: number;
+    IIIa: number;
+    IIIb: number;
+    IIIc: number;
+    IIId: number;
+    IVa: number;
+    IVb: number;
+    IVc: number;
+    IVd: number;
+    Va: number;
+    Vb: number;
+    Vc: number;
+    Vd: number;
+  };
 }
 
-// interface CourseScaleConfig {
-//   [key: string]: ComponentScaleConfig;
-//   totalPassing: number;
-// }
 interface CourseScaleConfig {
   [key: string]: ComponentScaleConfig | number;
   totalPassing: number;
 }
 
+// Default part weights (equal distribution of 50 marks across 20 parts = 2.5 each)
+const DEFAULT_PART_WEIGHTS = {
+  Ia: 2.5,
+  Ib: 2.5,
+  Ic: 2.5,
+  Id: 2.5,
+  IIa: 2.5,
+  IIb: 2.5,
+  IIc: 2.5,
+  IId: 2.5,
+  IIIa: 2.5,
+  IIIb: 2.5,
+  IIIc: 2.5,
+  IIId: 2.5,
+  IVa: 2.5,
+  IVb: 2.5,
+  IVc: 2.5,
+  IVd: 2.5,
+  Va: 2.5,
+  Vb: 2.5,
+  Vc: 2.5,
+  Vd: 2.5,
+};
+
 // Configuration for each course type
 export const COURSE_SCALES: Record<CourseType, CourseScaleConfig> = {
   PG: {
-    CA1: { maxMarks: 40, passingMarks: 16, conversionFactor: 0.8 }, // 50 -> 40
-    CA2: { maxMarks: 40, passingMarks: 16, conversionFactor: 0.8 }, // 50 -> 40
+    CA1: {
+      maxMarks: 40,
+      passingMarks: 16,
+      conversionFactor: 0.8,
+      partWeights: DEFAULT_PART_WEIGHTS,
+    },
+    CA2: {
+      maxMarks: 40,
+      passingMarks: 16,
+      conversionFactor: 0.8,
+      partWeights: DEFAULT_PART_WEIGHTS,
+    },
     ASSIGNMENT: { maxMarks: 20, passingMarks: 8 },
     totalPassing: 40,
   },
   "PG-Integrated": {
-    CA1: { maxMarks: 30, passingMarks: 12, conversionFactor: 0.6 }, // 50 -> 30
-    CA2: { maxMarks: 30, passingMarks: 12, conversionFactor: 0.6 }, // 50 -> 30
+    CA1: {
+      maxMarks: 30,
+      passingMarks: 12,
+      conversionFactor: 0.6,
+      partWeights: DEFAULT_PART_WEIGHTS,
+    },
+    CA2: {
+      maxMarks: 30,
+      passingMarks: 12,
+      conversionFactor: 0.6,
+      partWeights: DEFAULT_PART_WEIGHTS,
+    },
     LAB: { maxMarks: 30, passingMarks: 15 },
     ASSIGNMENT: { maxMarks: 10, passingMarks: 4 },
     totalPassing: 43,
   },
   UG: {
-    CA1: { maxMarks: 25, passingMarks: 10, conversionFactor: 0.5 }, // 50 -> 25
-    CA2: { maxMarks: 25, passingMarks: 10, conversionFactor: 0.5 }, // 50 -> 25
-    CA3: { maxMarks: 25, passingMarks: 10, conversionFactor: 0.5 }, // 50 -> 25
+    CA1: {
+      maxMarks: 25,
+      passingMarks: 10,
+      conversionFactor: 0.5,
+      partWeights: DEFAULT_PART_WEIGHTS,
+    },
+    CA2: {
+      maxMarks: 25,
+      passingMarks: 10,
+      conversionFactor: 0.5,
+      partWeights: DEFAULT_PART_WEIGHTS,
+    },
+    CA3: {
+      maxMarks: 25,
+      passingMarks: 10,
+      conversionFactor: 0.5,
+      partWeights: DEFAULT_PART_WEIGHTS,
+    },
     ASSIGNMENT: { maxMarks: 25, passingMarks: 10 },
     totalPassing: 40,
   },
   "UG-Integrated": {
-    CA1: { maxMarks: 20, passingMarks: 8, conversionFactor: 0.4 }, // 50 -> 20
-    CA2: { maxMarks: 20, passingMarks: 8, conversionFactor: 0.4 }, // 50 -> 20
-    CA3: { maxMarks: 20, passingMarks: 8, conversionFactor: 0.4 }, // 50 -> 20
+    CA1: {
+      maxMarks: 20,
+      passingMarks: 8,
+      conversionFactor: 0.4,
+      partWeights: DEFAULT_PART_WEIGHTS,
+    },
+    CA2: {
+      maxMarks: 20,
+      passingMarks: 8,
+      conversionFactor: 0.4,
+      partWeights: DEFAULT_PART_WEIGHTS,
+    },
+    CA3: {
+      maxMarks: 20,
+      passingMarks: 8,
+      conversionFactor: 0.4,
+      partWeights: DEFAULT_PART_WEIGHTS,
+    },
     LAB: { maxMarks: 30, passingMarks: 15 },
     ASSIGNMENT: { maxMarks: 10, passingMarks: 4 },
     totalPassing: 43,
@@ -57,29 +150,12 @@ export const COURSE_SCALES: Record<CourseType, CourseScaleConfig> = {
 
 /**
  * Get the scale configuration for a component based on course type
+ * Now supports course-specific configuration with part weights
  */
-// export function getComponentScale(
-//   courseType: CourseType,
-//   componentName: string
-// ): ComponentScaleConfig {
-//   if (!COURSE_SCALES[courseType]) {
-//     console.error(`Unknown course type: ${courseType}`);
-//     return { maxMarks: 100, passingMarks: 40 };
-//   }
-
-//   if (!COURSE_SCALES[courseType][componentName]) {
-//     console.error(
-//       `Unknown component ${componentName} for course type ${courseType}`
-//     );
-//     return { maxMarks: 100, passingMarks: 40 };
-//   }
-
-//   return COURSE_SCALES[courseType][componentName];
-// }
-
 export function getComponentScale(
   courseType: CourseType,
-  componentName: string
+  componentName: string,
+  courseConfig?: any // NEW: Add course-specific config parameter
 ): ComponentScaleConfig {
   const courseScale = COURSE_SCALES[courseType];
   if (!courseScale) {
@@ -95,6 +171,18 @@ export function getComponentScale(
     return { maxMarks: 100, passingMarks: 40 };
   }
 
+  // NEW: If course-specific part weights are provided, use them
+  if (
+    courseConfig &&
+    courseConfig.partWeights &&
+    componentName.startsWith("CA")
+  ) {
+    return {
+      ...config,
+      partWeights: courseConfig.partWeights,
+    };
+  }
+
   return config;
 }
 
@@ -107,7 +195,7 @@ export function getCourseTotalPassingMarks(courseType: CourseType): number {
     return 40;
   }
 
-  return COURSE_SCALES[courseType].totalPassing;
+  return COURSE_SCALES[courseType].totalPassing as number;
 }
 
 /**
@@ -127,33 +215,16 @@ export function convertCAScore(
 }
 
 /**
- * Convert a lab session average (0-10) to the appropriate lab scale
- */
-// export function convertLabScore(
-//   averageSessionScore: number,
-//   courseType: CourseType
-// ): number {
-//   const config = getComponentScale(courseType, "LAB");
-
-//   // For lab-only courses, scale from 0-10 to 0-100 directly
-//   if (courseType === "UG-Lab-Only" || courseType === "PG-Lab-Only") {
-//     return Math.round((averageSessionScore / 10) * 100);
-//   }
-
-//   // For other courses, use the regular scaling
-//   return Math.round((averageSessionScore / 10) * config.maxMarks);
-// }
-
-// utils/scoreUtils.js - Updated Lab Score Conversion Function
-
-/**
  * Converts the average lab session score to the appropriate scale based on course type
  *
  * @param {number} averageScore - The average score from all lab sessions (typically out of 10)
  * @param {string} courseType - The type of course
  * @returns {number} - The properly scaled lab score
  */
-export const convertLabScore = (averageScore, courseType) => {
+export const convertLabScore = (
+  averageScore: number,
+  courseType: string
+): number => {
   // Default to 0 if no score
   if (!averageScore || isNaN(averageScore)) return 0;
 
@@ -171,3 +242,26 @@ export const convertLabScore = (averageScore, courseType) => {
     return Math.round(averageScore * 3);
   }
 };
+
+/**
+ * Get max marks for a specific question part based on component configuration
+ */
+export function getPartMaxMarks(
+  courseType: CourseType,
+  componentName: string,
+  question: string,
+  part: string,
+  courseConfig?: any
+): number {
+  // Get component configuration (default or course-specific)
+  const config = getComponentScale(courseType, componentName, courseConfig);
+
+  // If no part weights available, return default
+  if (!config.partWeights) return 2.5; // Default value (50/20)
+
+  // Create the part key (e.g., "Ia", "IIb")
+  const partKey = `${question}${part}` as keyof typeof config.partWeights;
+
+  // Return the specific part weight
+  return config.partWeights[partKey] || 2.5;
+}

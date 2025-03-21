@@ -26,22 +26,4 @@ export const courseService = {
     const response = await api.delete(`/api/courses/${id}`);
     return response.data;
   },
-
-  // NEW: Add method to update component configuration
-  updateComponentConfig: async (
-    courseId: string,
-    componentName: string,
-    config: any
-  ) => {
-    const response = await api.put(
-      `/api/courses/${courseId}/component-config`,
-      {
-        componentName,
-        config,
-      }
-    );
-    return response.data;
-  },
 };
-
-export default courseService;

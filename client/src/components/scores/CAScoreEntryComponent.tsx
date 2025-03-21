@@ -12,13 +12,8 @@ import {
   Typography,
   Grid,
   Alert,
-  Button,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Divider,
   Chip,
+  Button,
 } from "@mui/material";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
@@ -30,40 +25,12 @@ import ErrorBoundary from "./ErrorBoundary";
 import format from "date-fns/format";
 import parse from "date-fns/parse";
 
-// Define question keys as a type
-type QuestionKey = "I" | "II" | "III" | "IV" | "V";
-const questionKeys: QuestionKey[] = ["I", "II", "III", "IV", "V"];
-
-// Define part keys as a type
-type PartKey = "a" | "b" | "c" | "d";
-const partKeys: PartKey[] = ["a", "b", "c", "d"];
-
 interface QuestionPartScores {
   a: number;
   b: number;
   c: number;
   d: number;
   total: number;
-}
-
-// New interface for max marks configuration
-interface QuestionPartMaxMarks {
-  a: number;
-  b: number;
-  c: number;
-  d: number;
-  total: number;
-}
-
-// Interface for storing configuration of all question parts
-interface MaxMarksConfiguration {
-  I: QuestionPartMaxMarks;
-  II: QuestionPartMaxMarks;
-  III: QuestionPartMaxMarks;
-  IV: QuestionPartMaxMarks;
-  V: QuestionPartMaxMarks;
-  isConfigured: boolean;
-  componentName?: string;
 }
 
 interface StudentDetailedScore {
@@ -75,13 +42,7 @@ interface StudentDetailedScore {
   outOf50: number;
   outOf20: number;
   testDate?: string;
-  maxMarksConfig?: MaxMarksConfiguration; // Added to store configuration
-  [key: string]:
-    | QuestionPartScores
-    | number
-    | string
-    | MaxMarksConfiguration
-    | undefined;
+  [key: string]: QuestionPartScores | number | string | undefined;
 }
 
 interface DetailedScore {
@@ -90,10 +51,12 @@ interface DetailedScore {
 
 interface CAScoreEntryComponentProps {
   students: Student[];
-  componentName: string; // CA1, CA2, or CA3
+  componentName: string;
   courseType: CourseType;
+  courseConfig?: any;
   onScoresChange: (scores: DetailedScore) => void;
   initialScores?: DetailedScore;
+  onReconfigure?: () => void;
 }
 
 const numberToWords = (num: number): string => {
@@ -131,22 +94,14 @@ const numberToWords = (num: number): string => {
 // Format for displaying dates (dd/mm/yyyy)
 const DATE_FORMAT = "dd/MM/yyyy";
 
-// Default configuration with 5 marks for each part
-const getDefaultMaxMarksConfig = (): MaxMarksConfiguration => ({
-  I: { a: 5, b: 5, c: 5, d: 5, total: 20 },
-  II: { a: 5, b: 5, c: 5, d: 5, total: 20 },
-  III: { a: 5, b: 0, c: 0, d: 0, total: 5 },
-  IV: { a: 5, b: 0, c: 0, d: 0, total: 5 },
-  V: { a: 0, b: 0, c: 0, d: 0, total: 0 },
-  isConfigured: false,
-});
-
 export const CAScoreEntryComponent: React.FC<CAScoreEntryComponentProps> = ({
   students,
   componentName,
   courseType,
+  courseConfig,
   onScoresChange,
   initialScores = {},
+  onReconfigure,
 }) => {
   // Get date from first student's score or use current date
   const getInitialDate = (): Date => {
@@ -172,193 +127,51 @@ export const CAScoreEntryComponent: React.FC<CAScoreEntryComponentProps> = ({
   const [testDate, setTestDate] = useState<Date | null>(getInitialDate());
   const [scores, setScores] = useState<DetailedScore>(initialScores);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
+  const [totalOverflow, setTotalOverflow] = useState<boolean>(false);
 
-  // State for max marks configuration
-  const [maxMarksConfig, setMaxMarksConfig] = useState<MaxMarksConfiguration>(
-    getDefaultMaxMarksConfig()
+  // Use course-specific configuration if available
+  const scaleConfig = getComponentScale(
+    courseType,
+    componentName,
+    courseConfig
   );
-  const [showConfigDialog, setShowConfigDialog] = useState(false);
-  const [configError, setConfigError] = useState<string | null>(null);
-
-  // Flag to indicate if configuration is needed
-  const [needsConfiguration, setNeedsConfiguration] = useState(true);
-
-  const scaleConfig = getComponentScale(courseType, componentName);
-  const outputMaxMarks = scaleConfig.maxMarks;
+  const maxMarks = scaleConfig.maxMarks;
   const passingMarks = scaleConfig.passingMarks;
-
-  // Function to check if a configuration exists in the scores
-  const checkForExistingConfiguration = () => {
-    // First check for direct configured state in props
-    if (initialScores) {
-      console.log(
-        `Checking for existing configuration in ${
-          Object.keys(initialScores).length
-        } student scores`
-      );
-
-      // First, look for a configuration marked with the correct component name
-      for (const studentId in initialScores) {
-        const studentScore = initialScores[studentId];
-        if (
-          studentScore.maxMarksConfig &&
-          studentScore.maxMarksConfig.isConfigured &&
-          studentScore.maxMarksConfig.componentName === componentName
-        ) {
-          console.log(
-            `Found config specifically for ${componentName}:`,
-            studentScore.maxMarksConfig
-          );
-          return studentScore.maxMarksConfig;
-        }
-      }
-
-      // If no component-specific config found, look for any valid configuration
-      for (const studentId in initialScores) {
-        const studentScore = initialScores[studentId];
-        if (
-          studentScore.maxMarksConfig &&
-          studentScore.maxMarksConfig.isConfigured
-        ) {
-          console.log(
-            `Found general config that might work for ${componentName}:`,
-            studentScore.maxMarksConfig
-          );
-
-          // Clone and tag it with the current component name
-          const config = {
-            ...studentScore.maxMarksConfig,
-            componentName,
-          };
-
-          return config;
-        }
-      }
-    }
-
-    // As a fallback, check localStorage
-    try {
-      const isConfigured = localStorage.getItem(`ca_config_${componentName}`);
-      if (isConfigured === "true") {
-        console.log(`Found localStorage flag for ${componentName}`);
-
-        // Try to load saved config from localStorage
-        const savedConfig = localStorage.getItem(
-          `ca_config_data_${componentName}`
-        );
-        if (savedConfig) {
-          try {
-            const parsedConfig = JSON.parse(savedConfig);
-            console.log(
-              `Loaded config from localStorage for ${componentName}`,
-              parsedConfig
-            );
-            return parsedConfig;
-          } catch (e) {
-            console.error("Failed to parse saved config from localStorage", e);
-          }
-        }
-
-        // Create a default but valid configuration
-        const config = {
-          ...getDefaultMaxMarksConfig(),
-          isConfigured: true,
-          componentName,
-        };
-
-        return config;
-      }
-    } catch (e) {
-      console.error("Error checking localStorage:", e);
-    }
-
-    console.log(
-      `No valid configuration found for ${componentName}, will need to configure`
-    );
-    return null;
+  const partWeights = scaleConfig.partWeights || {
+    Ia: 2.5,
+    Ib: 2.5,
+    Ic: 2.5,
+    Id: 2.5,
+    IIa: 2.5,
+    IIb: 2.5,
+    IIc: 2.5,
+    IId: 2.5,
+    IIIa: 2.5,
+    IIIb: 2.5,
+    IIIc: 2.5,
+    IIId: 2.5,
+    IVa: 2.5,
+    IVb: 2.5,
+    IVc: 2.5,
+    IVd: 2.5,
+    Va: 2.5,
+    Vb: 2.5,
+    Vc: 2.5,
+    Vd: 2.5,
   };
-
-  // Calculate total max marks across all questions
-  const calculateTotalMaxMarks = (): number => {
-    try {
-      return (
-        maxMarksConfig.I.total +
-        maxMarksConfig.II.total +
-        maxMarksConfig.III.total +
-        maxMarksConfig.IV.total +
-        maxMarksConfig.V.total
-      );
-    } catch (err) {
-      console.error("Error calculating total max marks:", err);
-      return 0;
-    }
-  };
-
-  // Additional check for configuration using localStorage as backup
-  useEffect(() => {
-    // Check localStorage for saved configuration status
-    try {
-      const isConfigured = localStorage.getItem(`ca_config_${componentName}`);
-      if (isConfigured === "true") {
-        // If localStorage indicates this component was configured but we don't have config
-        // Use the default or existing config and mark as configured
-        if (needsConfiguration) {
-          console.log(
-            `Found localStorage flag for ${componentName}, using existing configuration`
-          );
-          // Use existing config if available, otherwise use the default
-          const config = {
-            ...maxMarksConfig,
-            isConfigured: true,
-            componentName,
-          };
-          setMaxMarksConfig(config);
-          setNeedsConfiguration(false);
-          setShowConfigDialog(false);
-        }
-      }
-    } catch (e) {
-      console.error("Error checking localStorage for configuration:", e);
-    }
-  }, [componentName, needsConfiguration, maxMarksConfig]);
 
   useEffect(() => {
     // If we have initial scores, use them; otherwise create new ones
     if (initialScores && Object.keys(initialScores).length > 0) {
-      // Check for existing configuration
-      const existingConfig = checkForExistingConfiguration();
-
-      if (existingConfig && existingConfig.isConfigured) {
-        // Configuration found and is valid, use it
-        setMaxMarksConfig(existingConfig);
-        setNeedsConfiguration(false);
-        setShowConfigDialog(false); // Ensure dialog is closed
-      } else {
-        // No valid configuration found, will need to configure
-        setShowConfigDialog(true);
-      }
-
+      // We have scores for this specific component - use them
       const formattedScores: DetailedScore = {};
 
       Object.keys(initialScores).forEach((studentId) => {
         const studentScore = initialScores[studentId];
 
-        // Get the existing config if available
-        let configToUse = existingConfig;
-
-        // If this student has a configuration, prioritize it
-        if (
-          studentScore.maxMarksConfig &&
-          studentScore.maxMarksConfig.isConfigured
-        ) {
-          configToUse = studentScore.maxMarksConfig;
-          // Update the component-level config with this student's config
-          if (configToUse.componentName === componentName) {
-            setMaxMarksConfig(configToUse);
-          }
-        }
-
         // Get the test date for this specific component
+        // If not found, generate one based on initial date calculation
         const componentTestDate =
           studentScore.testDate || format(getInitialDate(), DATE_FORMAT);
 
@@ -370,14 +183,11 @@ export const CAScoreEntryComponent: React.FC<CAScoreEntryComponentProps> = ({
           V: studentScore.V || { a: 0, b: 0, c: 0, d: 0, total: 0 },
           outOf50: studentScore.outOf50 || 0,
           outOf20: studentScore.outOf20 || 0,
-          testDate: componentTestDate,
-          // Use this student's config if available, otherwise use the found or default config
-          maxMarksConfig: configToUse || maxMarksConfig,
+          testDate: componentTestDate, // Use component-specific date
         };
       });
 
       setScores(formattedScores);
-
       // Also set the test date state for the date picker
       const firstStudent = Object.values(initialScores)[0];
       if (firstStudent?.testDate) {
@@ -393,9 +203,6 @@ export const CAScoreEntryComponent: React.FC<CAScoreEntryComponentProps> = ({
         }
       }
     } else {
-      // No existing scores, show configuration dialog
-      setShowConfigDialog(true);
-
       // Create new scores for all students with today's date
       const newScores: DetailedScore = {};
       const today = format(new Date(), DATE_FORMAT);
@@ -411,7 +218,6 @@ export const CAScoreEntryComponent: React.FC<CAScoreEntryComponentProps> = ({
             outOf50: 0,
             outOf20: 0,
             testDate: today,
-            maxMarksConfig: maxMarksConfig,
           };
         }
       });
@@ -444,131 +250,38 @@ export const CAScoreEntryComponent: React.FC<CAScoreEntryComponentProps> = ({
     });
   };
 
-  // Handle changes to max marks configuration
-  const handleMaxMarksChange = (
-    question: QuestionKey,
-    part: PartKey,
-    value: number
-  ) => {
-    // Validate input
-    if (value < 0) {
-      setConfigError("Marks cannot be negative");
-      return;
-    }
-
-    // Update the configuration
-    setMaxMarksConfig((prev) => {
-      const newConfig = { ...prev };
-      const questionConfig = { ...newConfig[question] };
-
-      questionConfig[part] = value;
-
-      // Update total for this question
-      questionConfig.total =
-        questionConfig.a +
-        questionConfig.b +
-        questionConfig.c +
-        questionConfig.d;
-
-      newConfig[question] = questionConfig;
-
-      return newConfig;
-    });
-
-    // Clear error if there was one
-    if (configError) {
-      setConfigError(null);
-    }
-  };
-
-  // Save the max marks configuration
-  const handleSaveConfiguration = () => {
-    const total = calculateTotalMaxMarks();
-
-    if (total !== 50) {
-      setConfigError(`Total marks must equal 50. Current total: ${total}`);
-      return;
-    }
-
-    // Mark as configured
-    const updatedConfig = {
-      ...maxMarksConfig,
-      isConfigured: true,
-      componentName: componentName, // Store which component this is for
-    };
-
-    setMaxMarksConfig(updatedConfig);
-
-    // Update all student scores with the configuration
-    setScores((prev) => {
-      const updatedScores = { ...prev };
-
-      Object.keys(updatedScores).forEach((studentId) => {
-        updatedScores[studentId] = {
-          ...updatedScores[studentId],
-          maxMarksConfig: updatedConfig,
-        };
-      });
-
-      // Notify parent component of the changes
-      onScoresChange(updatedScores);
-
-      return updatedScores;
-    });
-
-    setNeedsConfiguration(false);
-    setShowConfigDialog(false);
-
-    // Also set a local storage flag to remember configuration was done for this component
-    try {
-      localStorage.setItem(`ca_config_${componentName}`, "true");
-
-      // Save the actual configuration in localStorage for better recovery
-      localStorage.setItem(
-        `ca_config_data_${componentName}`,
-        JSON.stringify(updatedConfig)
-      );
-    } catch (e) {
-      console.error("Failed to save configuration to localStorage:", e);
-    }
-  };
-
-  // Open configuration dialog
-  const handleOpenConfigDialog = () => {
-    setShowConfigDialog(true);
-  };
-
-  // Handle score change for a student
   const handleScoreChange = (
     studentId: string,
-    question: QuestionKey,
-    part: PartKey,
+    question: "I" | "II" | "III" | "IV" | "V",
+    part: "a" | "b" | "c" | "d",
     value: number
   ) => {
     if (!studentId) {
       console.error("Missing studentId in handleScoreChange");
       return;
     }
-
-    // If configuration is not complete, don't allow score entry
-    if (needsConfiguration || !maxMarksConfig.isConfigured) {
-      setError("Please configure maximum marks before entering scores");
-      setShowConfigDialog(true);
-      return;
-    }
-
     try {
       const numValue = Number(value);
-
-      // Check if entered value exceeds max marks for this part
-      const maxForPart = maxMarksConfig[question][part];
-      if (numValue > maxForPart) {
-        setError(`Maximum mark for ${question}${part} is ${maxForPart}`);
+      if (isNaN(numValue) || numValue < 0) {
+        setError("Please enter a valid positive number");
         return;
       }
 
-      if (isNaN(numValue) || numValue < 0) {
-        setError("Please enter a valid positive number");
+      // NEW: Validate against configured weight for this part
+      const partKey = `${question}${part}` as keyof typeof partWeights;
+      const maxPartMarks = partWeights[partKey] || 0;
+
+      // Don't allow scores higher than the configured weight for this part
+      if (numValue > maxPartMarks) {
+        setError(`Maximum marks for ${question}${part} is ${maxPartMarks}`);
+        return;
+      }
+
+      // Skip update if weight is zero
+      if (maxPartMarks === 0) {
+        setError(
+          `Part ${question}${part} has zero weight and cannot be edited`
+        );
         return;
       }
 
@@ -590,16 +303,6 @@ export const CAScoreEntryComponent: React.FC<CAScoreEntryComponentProps> = ({
             testDate: testDate
               ? format(testDate, DATE_FORMAT)
               : format(new Date(), DATE_FORMAT),
-            maxMarksConfig: maxMarksConfig, // Always include configuration
-          };
-        } else if (
-          !newScores[studentId].maxMarksConfig ||
-          newScores[studentId].maxMarksConfig.componentName !== componentName
-        ) {
-          // Ensure maxMarksConfig is included and marked with correct component
-          newScores[studentId].maxMarksConfig = {
-            ...maxMarksConfig,
-            componentName,
           };
         }
 
@@ -621,25 +324,54 @@ export const CAScoreEntryComponent: React.FC<CAScoreEntryComponentProps> = ({
           (newScores[studentId][question] as QuestionPartScores).c +
           (newScores[studentId][question] as QuestionPartScores).d;
 
-        // Update the total scores
-        newScores[studentId].outOf50 =
-          (newScores[studentId].I as QuestionPartScores).total +
-          (newScores[studentId].II as QuestionPartScores).total +
-          (newScores[studentId].III as QuestionPartScores).total +
-          (newScores[studentId].IV as QuestionPartScores).total +
-          (newScores[studentId].V as QuestionPartScores).total;
+        // Calculate total directly based on the entered scores
+        let directTotal = 0;
+        const questions = ["I", "II", "III", "IV", "V"] as const;
+        const parts = ["a", "b", "c", "d"] as const;
 
+        questions.forEach((q) => {
+          parts.forEach((p) => {
+            const questionPartScore = (
+              newScores[studentId][q] as QuestionPartScores
+            )[p];
+            directTotal += questionPartScore;
+          });
+        });
+
+        // Check if total is greater than 50 (warning only, don't prevent input)
+        setTotalOverflow(directTotal > 50);
+        if (directTotal > 50) {
+          setWarning(`Warning: Total marks entered (${directTotal}) exceed 50`);
+        } else {
+          setWarning(null);
+        }
+
+        // Calculate weighted total based on configured part weights
+        let weightedTotal = 0;
+        questions.forEach((q) => {
+          parts.forEach((p) => {
+            const questionPartScore = (
+              newScores[studentId][q] as QuestionPartScores
+            )[p];
+            const partKey = `${q}${p}` as keyof typeof partWeights;
+            const maxPartMarks = partWeights[partKey] || 0;
+
+            // Calculate percentage of possible marks and apply weight
+            if (maxPartMarks > 0) {
+              weightedTotal += questionPartScore;
+            }
+          });
+        });
+
+        // Ensure weightedTotal doesn't exceed 50
+        newScores[studentId].outOf50 = Math.min(weightedTotal, 50);
+
+        // Convert to outOf20 using the course type and component
         newScores[studentId].outOf20 = convertCAScore(
           newScores[studentId].outOf50 as number,
           courseType,
           componentName
         );
-
-        // Always ensure maxMarksConfig is stored with component name
-        newScores[studentId].maxMarksConfig = {
-          ...maxMarksConfig,
-          componentName,
-        };
 
         onScoresChange(newScores);
         return newScores;
@@ -652,168 +384,36 @@ export const CAScoreEntryComponent: React.FC<CAScoreEntryComponentProps> = ({
     }
   };
 
-  // Render the configuration dialog
-  const renderConfigDialog = () => {
-    return (
-      <Dialog
-        open={showConfigDialog}
-        onClose={() => (needsConfiguration ? null : setShowConfigDialog(false))}
-        maxWidth="md"
-        fullWidth
-      >
-        <DialogTitle>Configure Maximum Marks for {componentName}</DialogTitle>
-        <DialogContent>
-          <Typography variant="subtitle1" color="primary" sx={{ mb: 2 }}>
-            Set the maximum marks for each question part. Total must equal 50
-            marks.
-          </Typography>
+  // Get the configured weight for a specific part
+  const getPartWeight = (question: string, part: string): number => {
+    const key = `${question}${part}` as keyof typeof partWeights;
+    return partWeights[key] || 0; // Default to 0 if not found
+  };
 
-          {configError && (
-            <Alert severity="error" sx={{ mb: 2 }}>
-              {configError}
-            </Alert>
-          )}
-
-          <Box sx={{ mb: 2 }}>
-            <Typography variant="subtitle2" color="text.secondary">
-              Current Total: {calculateTotalMaxMarks()}/50
-            </Typography>
-            <Box
-              sx={{
-                height: 10,
-                bgcolor: "grey.200",
-                borderRadius: 5,
-                mt: 1,
-                overflow: "hidden",
-              }}
-            >
-              <Box
-                sx={{
-                  width: `${(calculateTotalMaxMarks() / 50) * 100}%`,
-                  height: "100%",
-                  bgcolor:
-                    calculateTotalMaxMarks() === 50
-                      ? "success.main"
-                      : "warning.main",
-                  transition: "width 0.3s ease-in-out",
-                }}
-              />
-            </Box>
-          </Box>
-
-          <TableContainer component={Paper} sx={{ mb: 3 }}>
-            <Table size="small">
-              <TableHead>
-                <TableRow sx={{ bgcolor: "grey.100" }}>
-                  <TableCell>Question</TableCell>
-                  <TableCell align="center">Part A</TableCell>
-                  <TableCell align="center">Part B</TableCell>
-                  <TableCell align="center">Part C</TableCell>
-                  <TableCell align="center">Part D</TableCell>
-                  <TableCell align="center">Question Total</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {questionKeys.map((question) => (
-                  <TableRow key={question}>
-                    <TableCell>{question}</TableCell>
-                    {partKeys.map((part) => (
-                      <TableCell key={`${question}-${part}`} align="center">
-                        <TextField
-                          type="number"
-                          value={maxMarksConfig[question][part]}
-                          onChange={(e) =>
-                            handleMaxMarksChange(
-                              question,
-                              part,
-                              Number(e.target.value)
-                            )
-                          }
-                          inputProps={{
-                            min: 0,
-                            max: 50,
-                            style: { textAlign: "center" },
-                          }}
-                          size="small"
-                          sx={{ width: 70 }}
-                        />
-                      </TableCell>
-                    ))}
-                    <TableCell align="center">
-                      <Chip
-                        label={maxMarksConfig[question].total}
-                        color={
-                          maxMarksConfig[question].total > 0
-                            ? "primary"
-                            : "default"
-                        }
-                        size="small"
-                      />
-                    </TableCell>
-                  </TableRow>
-                ))}
-                <TableRow sx={{ bgcolor: "grey.100" }}>
-                  <TableCell colSpan={5} align="right">
-                    <Typography variant="subtitle2">
-                      Total Maximum Marks:
-                    </Typography>
-                  </TableCell>
-                  <TableCell align="center">
-                    <Chip
-                      label={calculateTotalMaxMarks()}
-                      color={
-                        calculateTotalMaxMarks() === 50 ? "success" : "warning"
-                      }
-                      sx={{ fontWeight: "bold" }}
-                    />
-                  </TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
-          </TableContainer>
-
-          <Typography variant="body2" color="text.secondary">
-            Note: The combined total of all question parts must equal exactly 50
-            marks. You cannot enter student scores until this configuration is
-            complete.
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          {!needsConfiguration && (
-            <Button onClick={() => setShowConfigDialog(false)}>Cancel</Button>
-          )}
-          <Button
-            onClick={handleSaveConfiguration}
-            variant="contained"
-            color="primary"
-            disabled={calculateTotalMaxMarks() !== 50}
-          >
-            Save Configuration
-          </Button>
-        </DialogActions>
-      </Dialog>
-    );
+  const handleReconfigure = () => {
+    if (onReconfigure) {
+      if (
+        window.confirm(
+          "Reconfiguring will reset all existing scores to zero. Are you sure you want to continue?"
+        )
+      ) {
+        onReconfigure();
+      }
+    }
   };
 
   return (
     <Box sx={{ width: "100%" }}>
-      {renderConfigDialog()}
-
       <Grid container spacing={2} sx={{ mb: 3 }}>
         <Grid item xs={12} sm={6}>
           <Typography variant="h6">{componentName} Score Entry</Typography>
-          {maxMarksConfig.isConfigured && (
-            <Button
-              variant="outlined"
-              size="small"
-              onClick={handleOpenConfigDialog}
-              sx={{ ml: 2 }}
-            >
-              Edit Max Marks
-            </Button>
-          )}
         </Grid>
-        <Grid item xs={12} sm={6}>
+        <Grid
+          item
+          xs={12}
+          sm={6}
+          sx={{ display: "flex", justifyContent: "space-between" }}
+        >
           <LocalizationProvider dateAdapter={AdapterDateFns}>
             <DatePicker
               label="Test Date"
@@ -822,8 +422,50 @@ export const CAScoreEntryComponent: React.FC<CAScoreEntryComponentProps> = ({
               format={DATE_FORMAT}
             />
           </LocalizationProvider>
+
+          {/* NEW: Button to reconfigure weights */}
+          {onReconfigure && (
+            <Button
+              variant="outlined"
+              color="secondary"
+              onClick={handleReconfigure}
+            >
+              Reconfigure Weights
+            </Button>
+          )}
         </Grid>
       </Grid>
+
+      {/* Display the configured weights */}
+      <Paper sx={{ p: 2, mb: 3, bgcolor: "background.default" }}>
+        <Typography variant="subtitle1" gutterBottom>
+          Configured Question Weights:
+        </Typography>
+        <Grid container spacing={2}>
+          {["I", "II", "III", "IV", "V"].map((question) => (
+            <Grid item key={question} xs={12} sm={2.4}>
+              <Typography variant="subtitle2">Question {question}:</Typography>
+              <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+                {["a", "b", "c", "d"].map((part) => {
+                  const weight = getPartWeight(question, part);
+                  return (
+                    <Chip
+                      key={`${question}${part}`}
+                      label={`${part}: ${weight}`}
+                      size="small"
+                      color={weight === 0 ? "default" : "primary"}
+                      variant="outlined"
+                      sx={{
+                        opacity: weight === 0 ? 0.6 : 1,
+                      }}
+                    />
+                  );
+                })}
+              </Box>
+            </Grid>
+          ))}
+        </Grid>
+      </Paper>
 
       {error && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
@@ -831,9 +473,13 @@ export const CAScoreEntryComponent: React.FC<CAScoreEntryComponentProps> = ({
         </Alert>
       )}
 
-      {needsConfiguration && !maxMarksConfig.isConfigured && (
-        <Alert severity="warning" sx={{ mb: 2 }}>
-          Please configure maximum marks before entering scores.
+      {warning && (
+        <Alert
+          severity="warning"
+          sx={{ mb: 2 }}
+          onClose={() => setWarning(null)}
+        >
+          {warning}
         </Alert>
       )}
 
@@ -858,7 +504,7 @@ export const CAScoreEntryComponent: React.FC<CAScoreEntryComponentProps> = ({
               <TableCell align="center">Total</TableCell>
               <TableCell align="center">Out_of_50</TableCell>
               <TableCell align="center">
-                Out_of_{outputMaxMarks} (pass {passingMarks})
+                Out_of_{maxMarks} (pass {passingMarks})
               </TableCell>
               <TableCell>Marks in Words</TableCell>
             </TableRow>
@@ -870,144 +516,160 @@ export const CAScoreEntryComponent: React.FC<CAScoreEntryComponentProps> = ({
               // Create React Fragment to group all rows for this student
               return (
                 <React.Fragment key={`student-${student._id}`}>
-                  {questionKeys.map((questionNo, questionIndex) => {
-                    // Ensure student has a score entry
-                    const studentScore = scores[student._id] || {
-                      I: { a: 0, b: 0, c: 0, d: 0, total: 0 },
-                      II: { a: 0, b: 0, c: 0, d: 0, total: 0 },
-                      III: { a: 0, b: 0, c: 0, d: 0, total: 0 },
-                      IV: { a: 0, b: 0, c: 0, d: 0, total: 0 },
-                      V: { a: 0, b: 0, c: 0, d: 0, total: 0 },
-                      outOf50: 0,
-                      outOf20: 0,
-                      testDate: testDate
-                        ? format(testDate, DATE_FORMAT)
-                        : format(new Date(), DATE_FORMAT),
-                      maxMarksConfig: maxMarksConfig,
-                    };
+                  {(["I", "II", "III", "IV", "V"] as const).map(
+                    (questionNo, questionIndex) => {
+                      // Ensure student has a score entry
+                      const studentScore = scores[student._id] || {
+                        I: { a: 0, b: 0, c: 0, d: 0, total: 0 },
+                        II: { a: 0, b: 0, c: 0, d: 0, total: 0 },
+                        III: { a: 0, b: 0, c: 0, d: 0, total: 0 },
+                        IV: { a: 0, b: 0, c: 0, d: 0, total: 0 },
+                        V: { a: 0, b: 0, c: 0, d: 0, total: 0 },
+                        outOf50: 0,
+                        outOf20: 0,
+                        testDate: testDate
+                          ? format(testDate, DATE_FORMAT)
+                          : format(new Date(), DATE_FORMAT),
+                      };
 
-                    const scaledScore = studentScore.outOf20 as number;
-                    const isPassing = scaledScore >= passingMarks;
+                      const scaledScore = studentScore.outOf20 as number;
+                      const isPassing = scaledScore >= passingMarks;
 
-                    // Get max marks for current question
-                    const questionMaxMarks = maxMarksConfig[questionNo];
-
-                    return (
-                      <TableRow key={`${student._id}-${questionNo}`}>
-                        {questionIndex === 0 && (
-                          <>
-                            <TableCell rowSpan={5}>
-                              {studentIndex + 1}
-                            </TableCell>
-                            <TableCell rowSpan={5}>
-                              {student.academicYear}
-                            </TableCell>
-                            <TableCell rowSpan={5}>{student.program}</TableCell>
-                            <TableCell rowSpan={5}>
-                              {student.registrationNumber}
-                            </TableCell>
-                            <TableCell rowSpan={5}>{student.name}</TableCell>
-                            <TableCell rowSpan={5}>
-                              {student.semester}
-                            </TableCell>
-                          </>
-                        )}
-                        <TableCell>{questionNo}</TableCell>
-
-                        {/* Render each part (a, b, c, d) with max marks info */}
-                        {partKeys.map((part) => {
-                          const maxMarkForPart = questionMaxMarks[part];
-                          const isDisabled =
-                            !maxMarksConfig.isConfigured ||
-                            maxMarkForPart === 0;
-
-                          return (
-                            <TableCell
-                              align="center"
-                              key={`${questionNo}-${part}`}
-                            >
-                              <TextField
-                                type="number"
-                                value={
-                                  (
-                                    studentScore[
-                                      questionNo
-                                    ] as QuestionPartScores
-                                  )?.[part] || 0
-                                }
-                                onChange={(e) =>
-                                  handleScoreChange(
-                                    student._id,
-                                    questionNo,
-                                    part,
-                                    Number(e.target.value)
-                                  )
-                                }
-                                inputProps={{
-                                  min: 0,
-                                  max: maxMarkForPart,
-                                  style: { textAlign: "center" },
-                                }}
-                                size="small"
-                                sx={{ width: 60 }}
-                                disabled={isDisabled}
-                                placeholder={
-                                  maxMarkForPart > 0 ? `${maxMarkForPart}` : "-"
-                                }
-                              />
-                              {maxMarksConfig.isConfigured && (
-                                <Typography
-                                  variant="caption"
-                                  display="block"
-                                  color="text.secondary"
-                                >
-                                  max: {maxMarkForPart}
-                                </Typography>
-                              )}
-                            </TableCell>
-                          );
-                        })}
-
-                        <TableCell align="center">
-                          {(studentScore[questionNo] as QuestionPartScores)
-                            ?.total || 0}
-                          {maxMarksConfig.isConfigured && (
-                            <Typography
-                              variant="caption"
-                              display="block"
-                              color="text.secondary"
-                            >
-                              /{questionMaxMarks.total}
-                            </Typography>
+                      return (
+                        <TableRow key={`${student._id}-${questionNo}`}>
+                          {questionIndex === 0 && (
+                            <>
+                              <TableCell rowSpan={5}>
+                                {studentIndex + 1}
+                              </TableCell>
+                              <TableCell rowSpan={5}>
+                                {student.academicYear}
+                              </TableCell>
+                              <TableCell rowSpan={5}>
+                                {student.program}
+                              </TableCell>
+                              <TableCell rowSpan={5}>
+                                {student.registrationNumber}
+                              </TableCell>
+                              <TableCell rowSpan={5}>{student.name}</TableCell>
+                              <TableCell rowSpan={5}>
+                                {student.semester}
+                              </TableCell>
+                            </>
                           )}
-                        </TableCell>
+                          <TableCell>{questionNo}</TableCell>
 
-                        {/* Show totals on the FIRST row for each student instead of last row */}
-                        {questionIndex === 0 && (
-                          <>
-                            <TableCell align="center" rowSpan={5}>
-                              {studentScore.outOf50}
-                            </TableCell>
-                            <TableCell
-                              align="center"
-                              rowSpan={5}
-                              sx={{
-                                color: isPassing
-                                  ? "success.main"
-                                  : "error.main",
-                                fontWeight: "bold",
-                              }}
-                            >
-                              {scaledScore}
-                            </TableCell>
-                            <TableCell rowSpan={5}>
-                              {numberToWords(scaledScore)}
-                            </TableCell>
-                          </>
-                        )}
-                      </TableRow>
-                    );
-                  })}
+                          {/* Each part shows its weight in the label and limits input */}
+                          {["a", "b", "c", "d"].map((partLetter) => {
+                            const part = partLetter as "a" | "b" | "c" | "d";
+                            const partWeight = getPartWeight(questionNo, part);
+                            const isZeroWeight = partWeight === 0;
+
+                            return (
+                              <TableCell
+                                align="center"
+                                key={`${questionNo}${part}`}
+                              >
+                                <TextField
+                                  type="number"
+                                  value={
+                                    (
+                                      studentScore[
+                                        questionNo
+                                      ] as QuestionPartScores
+                                    )?.[part] || 0
+                                  }
+                                  onChange={(e) =>
+                                    handleScoreChange(
+                                      student._id,
+                                      questionNo,
+                                      part,
+                                      Number(e.target.value)
+                                    )
+                                  }
+                                  inputProps={{
+                                    min: 0,
+                                    max: partWeight, // Limit to configured weight
+                                    step: 0.5,
+                                    style: {
+                                      textAlign: "center",
+                                      // Gray out zero-weight fields
+                                      color: isZeroWeight
+                                        ? "#888888"
+                                        : "inherit",
+                                    },
+                                  }}
+                                  size="small"
+                                  sx={{
+                                    width: 60,
+                                    // Visually indicate zero-weight fields
+                                    backgroundColor: isZeroWeight
+                                      ? "#f8f8f8"
+                                      : "inherit",
+                                  }}
+                                  label={`${partWeight}`} // Show actual weight (0)
+                                  disabled={isZeroWeight} // Disable if weight is zero
+                                  error={
+                                    (
+                                      studentScore[
+                                        questionNo
+                                      ] as QuestionPartScores
+                                    )[part] > partWeight
+                                  }
+                                  helperText={
+                                    (
+                                      studentScore[
+                                        questionNo
+                                      ] as QuestionPartScores
+                                    )[part] > partWeight
+                                      ? "Max!"
+                                      : ""
+                                  }
+                                />
+                              </TableCell>
+                            );
+                          })}
+
+                          <TableCell align="center">
+                            {(studentScore[questionNo] as QuestionPartScores)
+                              ?.total || 0}
+                          </TableCell>
+
+                          {/* Show totals on the FIRST row for each student instead of last row */}
+                          {questionIndex === 0 && (
+                            <>
+                              <TableCell
+                                align="center"
+                                rowSpan={5}
+                                sx={{
+                                  color: totalOverflow
+                                    ? "warning.main"
+                                    : "text.primary",
+                                }}
+                              >
+                                {(studentScore.outOf50 as number).toFixed(1)}
+                              </TableCell>
+                              <TableCell
+                                align="center"
+                                rowSpan={5}
+                                sx={{
+                                  color: isPassing
+                                    ? "success.main"
+                                    : "error.main",
+                                  fontWeight: "bold",
+                                }}
+                              >
+                                {scaledScore}
+                              </TableCell>
+                              <TableCell rowSpan={5}>
+                                {numberToWords(scaledScore)}
+                              </TableCell>
+                            </>
+                          )}
+                        </TableRow>
+                      );
+                    }
+                  )}
                 </React.Fragment>
               );
             })}

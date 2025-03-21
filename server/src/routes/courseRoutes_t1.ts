@@ -25,15 +25,6 @@ router.get(
   courseController.getCourse as RequestHandler
 );
 
-// New route for updating component configuration
-router.put(
-  "/:id/component-config",
-  protect,
-  (req: Request, res: Response, next: express.NextFunction) =>
-    courseAuthorization(req, res, next),
-  courseController.updateComponentConfig as RequestHandler
-);
-
 // Admin only routes
 router.post(
   "/",
