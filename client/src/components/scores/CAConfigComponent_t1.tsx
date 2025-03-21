@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Box,
   Paper,
@@ -17,7 +17,6 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  Snackbar,
 } from "@mui/material";
 import { Course } from "../../types";
 import { courseService } from "../../services/courseService";
@@ -86,16 +85,6 @@ const CAConfigComponent: React.FC<CAConfigComponentProps> = ({
   const [success, setSuccess] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  // New state for flash message
-  const [flashOpen, setFlashOpen] = useState<boolean>(false);
-  const [flashMessage, setFlashMessage] = useState<string>("");
-  const [flashSeverity, setFlashSeverity] = useState<
-    "error" | "warning" | "info" | "success"
-  >("error");
-
-  // Use a ref to track the previous total - prevents infinite loops
-  const prevTotalRef = useRef<number | null>(null);
-
   // Calculate question totals from the parts
   const getQuestionTotal = (question: string) => {
     const parts = ["a", "b", "c", "d"];
@@ -129,37 +118,6 @@ const CAConfigComponent: React.FC<CAConfigComponentProps> = ({
     }
   }, [course, componentName]);
 
-  // Fixed effect to check total whenever partWeights changes
-  // Use a ref to prevent infinite loops
-  useEffect(() => {
-    const total = calculateTotal();
-    const prevTotal = prevTotalRef.current;
-
-    // Only show flash message if the total has actually changed
-    // This prevents infinite re-renders
-    if (prevTotal !== total) {
-      if (total > 50) {
-        setFlashMessage(
-          `Warning: Total exceeds 50 marks (currently ${total.toFixed(1)})`
-        );
-        setFlashSeverity("error");
-        setFlashOpen(true);
-      } else if (
-        Math.abs(total - 50) <= 0.01 &&
-        prevTotal !== null &&
-        Math.abs(prevTotal - 50) > 0.01
-      ) {
-        // Only show success message when total changes to exactly 50
-        setFlashMessage("Perfect! Total equals 50 marks.");
-        setFlashSeverity("success");
-        setFlashOpen(true);
-      }
-
-      // Update the ref with current total
-      prevTotalRef.current = total;
-    }
-  }, [partWeights]);
-
   const handlePartWeightChange = (questionPart: string, value: string) => {
     const numValue = Number(value);
     if (isNaN(numValue) || numValue < 0) {
@@ -176,52 +134,14 @@ const CAConfigComponent: React.FC<CAConfigComponentProps> = ({
   };
 
   const calculateTotal = () => {
-    const total = Object.values(partWeights).reduce(
-      (sum, weight) => sum + weight,
-      0
-    );
-
-    // Don't set error state here to avoid infinite loops
-    // Just return the calculated total
-    return total;
-  };
-
-  // Function to update error state based on total - call this explicitly
-  const updateErrorState = (total: number) => {
-    if (total > 50) {
-      setError(
-        `Question part weights must sum to 50 (currently ${total.toFixed(1)})`
-      );
-    } else if (error && error.includes("must sum to 50")) {
-      setError(null);
-    }
-  };
-
-  // Function to handle closing the flash message
-  const handleFlashClose = (
-    event?: React.SyntheticEvent | Event,
-    reason?: string
-  ) => {
-    if (reason === "clickaway") {
-      return;
-    }
-    setFlashOpen(false);
+    return Object.values(partWeights).reduce((sum, weight) => sum + weight, 0);
   };
 
   const handleSaveConfig = async () => {
     try {
       const total = calculateTotal();
-
-      // Update error state here explicitly
-      updateErrorState(total);
-
       if (Math.abs(total - 50) > 0.01) {
-        // Show flash message for better visibility
-        setFlashMessage(
-          `Cannot save: Total must equal 50 (currently ${total.toFixed(1)})`
-        );
-        setFlashSeverity("error");
-        setFlashOpen(true);
+        setError("Question part weights must sum to 50");
         return;
       }
 
@@ -232,32 +152,16 @@ const CAConfigComponent: React.FC<CAConfigComponentProps> = ({
       });
 
       setSuccess("Configuration saved successfully");
-
-      // Show success flash message
-      setFlashMessage("Configuration saved successfully!");
-      setFlashSeverity("success");
-      setFlashOpen(true);
-
       onConfigSaved();
     } catch (err) {
       console.error("Error saving configuration:", err);
       setError("Failed to save configuration");
-
-      // Show error flash message
-      setFlashMessage("Failed to save configuration. Please try again.");
-      setFlashSeverity("error");
-      setFlashOpen(true);
     } finally {
       setSaving(false);
     }
   };
 
   const total = calculateTotal();
-  // Update error state explicitly here
-  React.useEffect(() => {
-    updateErrorState(total);
-  }, [total]);
-
   const isValid = Math.abs(total - 50) <= 0.01;
 
   // Define the questions for easier iteration
@@ -266,23 +170,6 @@ const CAConfigComponent: React.FC<CAConfigComponentProps> = ({
 
   return (
     <Box sx={{ width: "100%", mb: 4 }}>
-      {/* Flash message */}
-      <Snackbar
-        open={flashOpen}
-        autoHideDuration={6000}
-        onClose={handleFlashClose}
-        anchorOrigin={{ vertical: "top", horizontal: "center" }}
-      >
-        <Alert
-          onClose={handleFlashClose}
-          severity={flashSeverity}
-          variant="filled"
-          sx={{ width: "100%" }}
-        >
-          {flashMessage}
-        </Alert>
-      </Snackbar>
-
       <Card variant="outlined" sx={{ mb: 3 }}>
         <CardContent>
           <Typography variant="h5" gutterBottom color="primary">
@@ -344,6 +231,10 @@ const CAConfigComponent: React.FC<CAConfigComponentProps> = ({
                   const questionTotal = getQuestionTotal(question);
 
                   return (
+                    // In CAConfigComponent.tsx, let's also make a visual indicator for zero weights
+
+                    // In the table where the part weights are configured, add a visual indicator:
+
                     <TableRow key={question}>
                       <TableCell component="th" scope="row">
                         <Typography variant="subtitle2">
