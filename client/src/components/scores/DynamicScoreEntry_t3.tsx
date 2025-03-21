@@ -387,35 +387,17 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
         }
       });
 
-      console.log(
-        "Processing existing scores: ",
-        JSON.stringify(
-          existingScores.map((s) => ({
-            studentId:
-              typeof s.studentId === "string" ? s.studentId : s.studentId?._id,
-            components: s.scores?.map((c) => c.componentName),
-          }))
-        )
-      );
-
       existingScores.forEach((scoreEntry: any) => {
         try {
           const studentId =
             typeof scoreEntry.studentId === "string"
               ? scoreEntry.studentId
-              : scoreEntry.studentId?._id;
+              : scoreEntry.studentId._id;
 
           if (!studentId) {
             console.warn("Score entry missing studentId:", scoreEntry);
             return;
           }
-
-          console.log(
-            `Processing score for student ${studentId}, components:`,
-            scoreEntry.scores?.map(
-              (s: any) => `${s.componentName}:${s.obtainedMarks}`
-            )
-          );
 
           // Process the scores array for basic component data
           if (scoreEntry.scores && Array.isArray(scoreEntry.scores)) {
@@ -538,27 +520,11 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
             }
 
             // Process each question - extract testDate from meta when available
-            console.log(
-              `Processing ${
-                scoreEntry.questions?.length || 0
-              } questions for student ${studentId}`
-            );
-
-            (scoreEntry.questions || []).forEach((question: any) => {
+            scoreEntry.questions.forEach((question: any) => {
               // Skip questions that are lab sessions
               if (question.meta && question.meta.type === "lab_session") {
-                console.log("Skipping lab session question:", question);
                 return;
               }
-
-              console.log(
-                "Processing question:",
-                JSON.stringify({
-                  num: question.questionNumber,
-                  component: question.meta?.component,
-                  parts: question.parts?.length || 0,
-                })
-              );
 
               // Try to find which component this question belongs to
               let targetComponent: string | null = null;
@@ -689,11 +655,8 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
                       ] as QuestionPartScores;
 
                       // Type-safe way to set the part score
-                      const partValue = Number(part.obtainedMarks) || 0;
-                      (questionScores as any)[partKey] = partValue;
-                      console.log(
-                        `Setting ${componentName}.${questionKey}.${partKey} = ${partValue} for student ${studentId}`
-                      );
+                      (questionScores as any)[partKey] =
+                        Number(part.obtainedMarks) || 0;
                     }
                   });
 
@@ -728,29 +691,24 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
                   totalI + totalII + totalIII + totalIV + totalV;
 
                 // Only update if we have detailed scores
-                // Always update the outOf50 score, even if it's zero
-                studentScores.outOf50 = calculatedTotal;
-                console.log(
-                  `Setting ${componentName}.outOf50 = ${calculatedTotal} for student ${studentId}`
-                );
+                if (calculatedTotal > 0) {
+                  studentScores.outOf50 = calculatedTotal;
 
-                // Apply conversion factor
-                try {
-                  const conversionFactor =
-                    getComponentScale(course.type, componentName)
-                      .conversionFactor || 0.4;
-                  studentScores.outOf20 = Math.round(
-                    calculatedTotal * conversionFactor
-                  );
-                  console.log(
-                    `Setting ${componentName}.outOf20 = ${studentScores.outOf20} for student ${studentId}`
-                  );
-                } catch (err) {
-                  console.warn(
-                    `Error calculating conversion for ${componentName}:`,
-                    err
-                  );
-                  studentScores.outOf20 = Math.round(calculatedTotal * 0.4); // Default to 0.4
+                  // Apply conversion factor
+                  try {
+                    const conversionFactor =
+                      getComponentScale(course.type, componentName)
+                        .conversionFactor || 0.4;
+                    studentScores.outOf20 = Math.round(
+                      calculatedTotal * conversionFactor
+                    );
+                  } catch (err) {
+                    console.warn(
+                      `Error calculating conversion for ${componentName}:`,
+                      err
+                    );
+                    studentScores.outOf20 = Math.round(calculatedTotal * 0.4); // Default to 0.4
+                  }
                 }
               }
             );
@@ -917,21 +875,6 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
       });
 
       // Set state with our processed data
-      // Force UI update with new data - logging to verify the data is correct
-      console.log(
-        "Final CA Scores structure:",
-        JSON.stringify(
-          Object.keys(updatedCAScores).map((comp) => ({
-            component: comp,
-            studentCount: Object.keys(updatedCAScores[comp]).length,
-            example:
-              Object.keys(updatedCAScores[comp]).length > 0
-                ? updatedCAScores[comp][Object.keys(updatedCAScores[comp])[0]]
-                : "No data",
-          }))
-        )
-      );
-
       setCAScores(updatedCAScores);
 
       // Only set lab scores if LAB is supported by this course
@@ -943,14 +886,6 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
       }
 
       setAssignmentScores(updatedAssignmentScores);
-
-      // If the active component is a CA component, force re-render by temporarily clearing it
-      if (activeComponent.startsWith("CA")) {
-        setTimeout(() => {
-          console.log(`Force re-render for component ${activeComponent}`);
-          // This small timeout forces React to re-render the component with fresh data
-        }, 100);
-      }
 
       console.log("Processed CA scores:", updatedCAScores);
       console.log("Processed Lab scores:", updatedLabScores);

@@ -160,12 +160,6 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
 
   const previousLabScoresRef = useRef<string>("");
 
-  // Helper function to check if a component is supported by the course
-  const isSupportedComponent = (componentName: string): boolean => {
-    if (!course || !course.evaluationScheme) return false;
-    return Object.keys(course.evaluationScheme).includes(componentName);
-  };
-
   useEffect(() => {
     if (!course) return;
     const components = Object.keys(course.evaluationScheme);
@@ -261,26 +255,8 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
 
         // Only save if there are scores to submit
         if (scoresToSubmit.length > 0) {
-          const result = await scoreService.updateCourseScores(
-            course._id,
-            scoresToSubmit
-          );
+          await scoreService.updateCourseScores(course._id, scoresToSubmit);
           setLastSaved(new Date());
-
-          // Check if we need to reload data after save
-          if (result && result.length > 0) {
-            // If saving was successful but we have components with empty scores,
-            // trigger a reload to ensure data is synchronized
-            const activeComponentData = caScores[activeComponent];
-            const hasData =
-              activeComponentData &&
-              Object.keys(activeComponentData).length > 0;
-
-            if (!hasData && activeComponent.startsWith("CA")) {
-              console.log("Auto-reloading after empty component save");
-              await loadExistingScores();
-            }
-          }
           // Don't show success message to avoid disrupting the user
         }
       } catch (error) {
@@ -351,7 +327,6 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
       const existingScores = await scoreService.getScoresByCourse(course._id);
       console.log("Loaded scores from server:", existingScores);
 
-      // Initialize score objects for all components and students
       const updatedCAScores: { [component: string]: DetailedScore } = {};
       const updatedLabScores: { [studentId: string]: LabScore } = {};
       const updatedAssignmentScores: { [studentId: string]: AssignmentScore } =
@@ -362,133 +337,70 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
         setAcademicYear(existingScores[0].academicYear);
       }
 
-      // Get a list of supported components for this course
-      const supportedComponents = Object.keys(course.evaluationScheme || {});
-
-      // Pre-initialize CA components for all students to avoid missing data
-      supportedComponents.forEach((component) => {
-        if (component.startsWith("CA")) {
-          updatedCAScores[component] = {};
-
-          students.forEach((student) => {
-            if (student._id) {
-              updatedCAScores[component][student._id] = {
-                I: { a: 0, b: 0, c: 0, d: 0, total: 0 },
-                II: { a: 0, b: 0, c: 0, d: 0, total: 0 },
-                III: { a: 0, b: 0, c: 0, d: 0, total: 0 },
-                IV: { a: 0, b: 0, c: 0, d: 0, total: 0 },
-                V: { a: 0, b: 0, c: 0, d: 0, total: 0 },
-                outOf50: 0,
-                outOf20: 0,
-                testDate: "",
-              };
-            }
-          });
-        }
-      });
-
-      console.log(
-        "Processing existing scores: ",
-        JSON.stringify(
-          existingScores.map((s) => ({
-            studentId:
-              typeof s.studentId === "string" ? s.studentId : s.studentId?._id,
-            components: s.scores?.map((c) => c.componentName),
-          }))
-        )
-      );
-
       existingScores.forEach((scoreEntry: any) => {
         try {
           const studentId =
             typeof scoreEntry.studentId === "string"
               ? scoreEntry.studentId
-              : scoreEntry.studentId?._id;
+              : scoreEntry.studentId._id;
 
           if (!studentId) {
             console.warn("Score entry missing studentId:", scoreEntry);
             return;
           }
 
-          console.log(
-            `Processing score for student ${studentId}, components:`,
-            scoreEntry.scores?.map(
-              (s: any) => `${s.componentName}:${s.obtainedMarks}`
-            )
-          );
-
           // Process the scores array for basic component data
           if (scoreEntry.scores && Array.isArray(scoreEntry.scores)) {
             scoreEntry.scores.forEach((component: any) => {
-              // Only process components that are supported by this course type
-              if (supportedComponents.includes(component.componentName)) {
-                if (component.componentName.startsWith("CA")) {
-                  if (!updatedCAScores[component.componentName]) {
-                    updatedCAScores[component.componentName] = {};
-                  }
-
-                  // Extract testDate from component (if available)
-                  const testDate = component.testDate || "";
-                  console.log(
-                    `Loading test date for ${component.componentName}:`,
-                    testDate
-                  );
-
-                  // Initialize student CA score structure
-                  const studentCAScore: StudentDetailedScore = {
-                    I: { a: 0, b: 0, c: 0, d: 0, total: 0 },
-                    II: { a: 0, b: 0, c: 0, d: 0, total: 0 },
-                    III: { a: 0, b: 0, c: 0, d: 0, total: 0 },
-                    IV: { a: 0, b: 0, c: 0, d: 0, total: 0 },
-                    V: { a: 0, b: 0, c: 0, d: 0, total: 0 },
-                    outOf50: component.obtainedMarks || 0,
-                    outOf20: 0,
-                    testDate: testDate, // Store testDate in score data
-                  };
-
-                  // Apply conversion factor to calculate outOf20 score
-                  try {
-                    const courseType = course.type;
-                    const conversionFactor =
-                      getComponentScale(courseType, component.componentName)
-                        .conversionFactor || 0.4;
-                    studentCAScore.outOf20 = Math.round(
-                      studentCAScore.outOf50 * conversionFactor
-                    );
-                  } catch (err) {
-                    console.warn(
-                      `Error calculating conversion for ${component.componentName}:`,
-                      err
-                    );
-                    studentCAScore.outOf20 = Math.round(
-                      studentCAScore.outOf50 * 0.4
-                    ); // Default to 0.4
-                  }
-
-                  updatedCAScores[component.componentName][studentId] =
-                    studentCAScore;
-                } else if (
-                  component.componentName === "LAB" &&
-                  isSupportedComponent("LAB")
-                ) {
-                  // Create default lab structure (will be updated with sessions if available)
-                  updatedLabScores[studentId] = {
-                    componentName: "LAB",
-                    sessions: [],
-                    maxMarks: component.maxMarks || 30,
-                    totalObtained: component.obtainedMarks || 0,
-                  };
-                } else if (component.componentName === "ASSIGNMENT") {
-                  updatedAssignmentScores[studentId] = {
-                    componentName: "ASSIGNMENT",
-                    maxMarks: component.maxMarks || 10,
-                    obtainedMarks: component.obtainedMarks || 0,
-                  };
+              if (component.componentName.startsWith("CA")) {
+                if (!updatedCAScores[component.componentName]) {
+                  updatedCAScores[component.componentName] = {};
                 }
-              } else {
-                console.warn(
-                  `Skipping unsupported component ${component.componentName} for course type ${course.type}`
+
+                // Extract testDate from component (if available)
+                const testDate = component.testDate || "";
+                console.log(
+                  `Loading test date for ${component.componentName}:`,
+                  testDate
                 );
+
+                // Initialize student CA score structure
+                const studentCAScore: StudentDetailedScore = {
+                  I: { a: 0, b: 0, c: 0, d: 0, total: 0 },
+                  II: { a: 0, b: 0, c: 0, d: 0, total: 0 },
+                  III: { a: 0, b: 0, c: 0, d: 0, total: 0 },
+                  IV: { a: 0, b: 0, c: 0, d: 0, total: 0 },
+                  V: { a: 0, b: 0, c: 0, d: 0, total: 0 },
+                  outOf50: component.obtainedMarks || 0,
+                  outOf20: 0,
+                  testDate: testDate, // Store testDate in score data
+                };
+
+                // Apply conversion factor to calculate outOf20 score
+                const courseType = course.type;
+                const conversionFactor =
+                  getComponentScale(courseType, component.componentName)
+                    .conversionFactor || 0.4;
+                studentCAScore.outOf20 = Math.round(
+                  studentCAScore.outOf50 * conversionFactor
+                );
+
+                updatedCAScores[component.componentName][studentId] =
+                  studentCAScore;
+              } else if (component.componentName === "LAB") {
+                // Create default lab structure (will be updated with sessions if available)
+                updatedLabScores[studentId] = {
+                  componentName: "LAB",
+                  sessions: [],
+                  maxMarks: component.maxMarks || 30,
+                  totalObtained: component.obtainedMarks || 0,
+                };
+              } else if (component.componentName === "ASSIGNMENT") {
+                updatedAssignmentScores[studentId] = {
+                  componentName: "ASSIGNMENT",
+                  maxMarks: component.maxMarks || 10,
+                  obtainedMarks: component.obtainedMarks || 0,
+                };
               }
             });
           }
@@ -500,6 +412,7 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
             scoreEntry.questions.length > 0
           ) {
             // Process questions and lab sessions...
+            // (This part remains unchanged from the original code)
             // Find all CA components in the scores array
             const caComponents: string[] = [];
             // Create a map to store test dates by component
@@ -507,10 +420,7 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
 
             if (scoreEntry.scores && Array.isArray(scoreEntry.scores)) {
               scoreEntry.scores.forEach((score: any) => {
-                if (
-                  score.componentName?.startsWith("CA") &&
-                  supportedComponents.includes(score.componentName)
-                ) {
+                if (score.componentName?.startsWith("CA")) {
                   caComponents.push(score.componentName);
                   // Store the test date if available
                   if (score.testDate) {
@@ -531,44 +441,23 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
             // If no CA components found, create a default CA1
             if (
               caComponents.length === 0 &&
-              Object.keys(questionsByComponent).length === 0 &&
-              supportedComponents.includes("CA1")
+              Object.keys(questionsByComponent).length === 0
             ) {
               questionsByComponent["CA1"] = [];
             }
 
             // Process each question - extract testDate from meta when available
-            console.log(
-              `Processing ${
-                scoreEntry.questions?.length || 0
-              } questions for student ${studentId}`
-            );
-
-            (scoreEntry.questions || []).forEach((question: any) => {
+            scoreEntry.questions.forEach((question: any) => {
               // Skip questions that are lab sessions
               if (question.meta && question.meta.type === "lab_session") {
-                console.log("Skipping lab session question:", question);
                 return;
               }
-
-              console.log(
-                "Processing question:",
-                JSON.stringify({
-                  num: question.questionNumber,
-                  component: question.meta?.component,
-                  parts: question.parts?.length || 0,
-                })
-              );
 
               // Try to find which component this question belongs to
               let targetComponent: string | null = null;
 
               // First check meta.component if available
-              if (
-                question.meta &&
-                question.meta.component &&
-                supportedComponents.includes(question.meta.component)
-              ) {
+              if (question.meta && question.meta.component) {
                 targetComponent = question.meta.component;
 
                 // If question has a meta.date, and the component exists in our updated scores,
@@ -586,27 +475,15 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
                 // - CA1: questions 1-5
                 // - CA2: questions 6-10
                 // - CA3: questions 11-15
-                if (
-                  qNum >= 1 &&
-                  qNum <= 5 &&
-                  supportedComponents.includes("CA1")
-                ) {
+                if (qNum >= 1 && qNum <= 5) {
                   targetComponent = caComponents[0] || "CA1";
-                } else if (
-                  qNum >= 6 &&
-                  qNum <= 10 &&
-                  supportedComponents.includes("CA2")
-                ) {
+                } else if (qNum >= 6 && qNum <= 10) {
                   targetComponent = caComponents[1] || "CA2";
-                } else if (
-                  qNum >= 11 &&
-                  qNum <= 15 &&
-                  supportedComponents.includes("CA3")
-                ) {
+                } else if (qNum >= 11 && qNum <= 15) {
                   targetComponent = caComponents[2] || "CA3";
-                } else if (caComponents.length > 0) {
+                } else {
                   // Default to first component
-                  targetComponent = caComponents[0];
+                  targetComponent = caComponents[0] || "CA1";
                 }
               }
 
@@ -689,11 +566,8 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
                       ] as QuestionPartScores;
 
                       // Type-safe way to set the part score
-                      const partValue = Number(part.obtainedMarks) || 0;
-                      (questionScores as any)[partKey] = partValue;
-                      console.log(
-                        `Setting ${componentName}.${questionKey}.${partKey} = ${partValue} for student ${studentId}`
-                      );
+                      (questionScores as any)[partKey] =
+                        Number(part.obtainedMarks) || 0;
                     }
                   });
 
@@ -728,42 +602,29 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
                   totalI + totalII + totalIII + totalIV + totalV;
 
                 // Only update if we have detailed scores
-                // Always update the outOf50 score, even if it's zero
-                studentScores.outOf50 = calculatedTotal;
-                console.log(
-                  `Setting ${componentName}.outOf50 = ${calculatedTotal} for student ${studentId}`
-                );
+                if (calculatedTotal > 0) {
+                  studentScores.outOf50 = calculatedTotal;
 
-                // Apply conversion factor
-                try {
+                  // Apply conversion factor
                   const conversionFactor =
                     getComponentScale(course.type, componentName)
                       .conversionFactor || 0.4;
                   studentScores.outOf20 = Math.round(
                     calculatedTotal * conversionFactor
                   );
-                  console.log(
-                    `Setting ${componentName}.outOf20 = ${studentScores.outOf20} for student ${studentId}`
-                  );
-                } catch (err) {
-                  console.warn(
-                    `Error calculating conversion for ${componentName}:`,
-                    err
-                  );
-                  studentScores.outOf20 = Math.round(calculatedTotal * 0.4); // Default to 0.4
                 }
               }
             );
           }
 
-          // Process lab sessions if available - only if LAB is supported
+          // Process lab sessions if available
           if (
-            isSupportedComponent("LAB") &&
             scoreEntry.lab_sessions &&
             Array.isArray(scoreEntry.lab_sessions) &&
             scoreEntry.lab_sessions.length > 0
           ) {
             // Process lab sessions...
+            // (This part remains unchanged from the original code)
             // If student has a LAB component, update with sessions
             if (updatedLabScores[studentId]) {
               // Sort sessions by index to ensure proper ordering
@@ -785,8 +646,8 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
                   index: session.index !== undefined ? session.index : position,
                 })
               );
-            } else if (isSupportedComponent("LAB")) {
-              // Create a new lab component if none exists (only if LAB is supported)
+            } else {
+              // Create a new lab component if none exists
               updatedLabScores[studentId] = {
                 componentName: "LAB",
                 sessions: scoreEntry.lab_sessions.map(
@@ -800,24 +661,13 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
                       session.index !== undefined ? session.index : position,
                   })
                 ),
-                maxMarks: 30, // Default max marks
+                maxMarks: getComponentScale(course.type, "LAB").maxMarks, // Dynamic max marks based on course type
                 totalObtained: 0, // Will calculate below
               };
-
-              // Try to get correct scale from course type
-              try {
-                updatedLabScores[studentId].maxMarks = getComponentScale(
-                  course.type,
-                  "LAB"
-                ).maxMarks;
-              } catch (err) {
-                console.warn("Error getting LAB scale:", err);
-                // Keep default of 30
-              }
             }
 
             // Calculate total obtained score from sessions with the correct scale
-            if (updatedLabScores[studentId]?.sessions?.length > 0) {
+            if (updatedLabScores[studentId].sessions.length > 0) {
               const sessions = updatedLabScores[studentId].sessions;
               // Calculate average session score
               const sum = sessions.reduce(
@@ -827,19 +677,12 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
               const average = sum / sessions.length;
 
               // Apply correct scaling based on course type
-              try {
-                const scaledScore = convertLabScore(average, course.type);
-                updatedLabScores[studentId].totalObtained = scaledScore;
-              } catch (err) {
-                console.warn("Error calculating LAB score:", err);
-                // Just use average without scaling as fallback
-                updatedLabScores[studentId].totalObtained = average;
-              }
+              const scaledScore = convertLabScore(average, course.type);
+              updatedLabScores[studentId].totalObtained = scaledScore;
             }
           }
-          // Check for lab sessions in questions (only if LAB is supported)
+          // Check for lab sessions in questions
           else if (
-            isSupportedComponent("LAB") &&
             scoreEntry.questions &&
             Array.isArray(scoreEntry.questions)
           ) {
@@ -876,21 +719,12 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
                   0
                 );
                 const average = sum / sessions.length;
-
-                try {
-                  const scaledScore = convertLabScore(average, course.type);
-                  updatedLabScores[studentId].totalObtained = scaledScore;
-                } catch (err) {
-                  console.warn("Error calculating LAB score:", err);
-                  updatedLabScores[studentId].totalObtained = average;
-                }
+                const scaledScore = convertLabScore(average, course.type);
+                updatedLabScores[studentId].totalObtained = scaledScore;
               }
             }
-            // If we have a LAB component but no sessions details, create default sessions (only if LAB is supported)
-            else if (
-              isSupportedComponent("LAB") &&
-              updatedLabScores[studentId]
-            ) {
+            // If we have a LAB component but no sessions details, create default sessions
+            else if (updatedLabScores[studentId]) {
               const labTotalScore =
                 updatedLabScores[studentId].totalObtained || 0;
 
@@ -917,40 +751,9 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
       });
 
       // Set state with our processed data
-      // Force UI update with new data - logging to verify the data is correct
-      console.log(
-        "Final CA Scores structure:",
-        JSON.stringify(
-          Object.keys(updatedCAScores).map((comp) => ({
-            component: comp,
-            studentCount: Object.keys(updatedCAScores[comp]).length,
-            example:
-              Object.keys(updatedCAScores[comp]).length > 0
-                ? updatedCAScores[comp][Object.keys(updatedCAScores[comp])[0]]
-                : "No data",
-          }))
-        )
-      );
-
       setCAScores(updatedCAScores);
-
-      // Only set lab scores if LAB is supported by this course
-      if (isSupportedComponent("LAB")) {
-        setLabScores(updatedLabScores);
-      } else {
-        // Clear any existing lab scores to avoid conflicts
-        setLabScores({});
-      }
-
+      setLabScores(updatedLabScores);
       setAssignmentScores(updatedAssignmentScores);
-
-      // If the active component is a CA component, force re-render by temporarily clearing it
-      if (activeComponent.startsWith("CA")) {
-        setTimeout(() => {
-          console.log(`Force re-render for component ${activeComponent}`);
-          // This small timeout forces React to re-render the component with fresh data
-        }, 100);
-      }
 
       console.log("Processed CA scores:", updatedCAScores);
       console.log("Processed Lab scores:", updatedLabScores);
@@ -968,16 +771,6 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
     newValue: string
   ) => {
     setActiveComponent(newValue);
-
-    // When changing components, force reload if the current view is empty
-    // This helps recover from empty score states
-    if (
-      newValue.startsWith("CA") &&
-      (!caScores[newValue] || Object.keys(caScores[newValue]).length === 0)
-    ) {
-      console.log(`Empty score data detected for ${newValue}, reloading...`);
-      loadExistingScores();
-    }
   };
 
   const handleCAScoreChange = (component: string, scores: DetailedScore) => {
@@ -988,16 +781,13 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
   };
 
   const handleLabScoreChange = (scores: { [studentId: string]: LabScore }) => {
-    // Only update lab scores if LAB is supported by this course
-    if (isSupportedComponent("LAB")) {
-      setLabScores((prev) => {
-        // Only update if there are actual changes
-        if (JSON.stringify(prev) === JSON.stringify(scores)) {
-          return prev; // Return previous state if no changes
-        }
-        return scores;
-      });
-    }
+    setLabScores((prev) => {
+      // Only update if there are actual changes
+      if (JSON.stringify(prev) === JSON.stringify(scores)) {
+        return prev; // Return previous state if no changes
+      }
+      return scores;
+    });
   };
 
   const handleAssignmentScoreChange = (scores: {
@@ -1010,22 +800,6 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
   const prepareScoresForSubmission = () => {
     const formattedScores: any[] = [];
 
-    // Get supported components
-    const supportedComponents = course
-      ? Object.keys(course.evaluationScheme || {})
-      : [];
-
-    // Filter LAB component for UG course type to prevent saving invalid component data
-    if (course && course.type.toUpperCase() === "UG") {
-      const labIndex = supportedComponents.findIndex(
-        (comp) => comp.toUpperCase() === "LAB"
-      );
-      if (labIndex >= 0) {
-        console.warn("Removing LAB component from UG course before submission");
-        supportedComponents.splice(labIndex, 1);
-      }
-    }
-
     students.forEach((student) => {
       try {
         let studentScores: any[] = [];
@@ -1034,12 +808,7 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
 
         // Process CA scores (CA1, CA2, CA3) - Now with testDate and partWeights
         Object.keys(caScores).forEach((componentName) => {
-          // Only process components that are supported by this course
-          if (
-            supportedComponents.includes(componentName) &&
-            caScores[componentName] &&
-            caScores[componentName][student._id]
-          ) {
+          if (caScores[componentName] && caScores[componentName][student._id]) {
             const studentScore = caScores[componentName][student._id];
             const questions: any[] = [];
 
@@ -1143,29 +912,19 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
           }
         });
 
-        // Process LAB scores - ONLY if LAB is supported by this course
-        if (supportedComponents.includes("LAB") && labScores[student._id]) {
+        // Process LAB scores
+        if (labScores[student._id]) {
           const labScore = labScores[student._id];
 
-          // Add the main LAB component score with correct maxMarks
-          try {
-            const scaleConfig = getComponentScale(course.type, "LAB");
-            const labMaxMarks = scaleConfig.maxMarks;
+          // Add the main LAB component score with correct maxMarks based on course type
+          const scaleConfig = getComponentScale(course.type, "LAB");
+          const labMaxMarks = scaleConfig.maxMarks;
 
-            studentScores.push({
-              componentName: "LAB",
-              maxMarks: labMaxMarks,
-              obtainedMarks: labScore.totalObtained || 0,
-            });
-          } catch (err) {
-            console.warn("Error getting LAB scale config:", err);
-            // Use default value if error
-            studentScores.push({
-              componentName: "LAB",
-              maxMarks: 30, // Default max marks
-              obtainedMarks: labScore.totalObtained || 0,
-            });
-          }
+          studentScores.push({
+            componentName: "LAB",
+            maxMarks: labMaxMarks,
+            obtainedMarks: labScore.totalObtained || 0,
+          });
 
           // Process lab sessions for storage with preserved indices
           if (labScore.sessions && labScore.sessions.length > 0) {
@@ -1207,11 +966,8 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
           }
         }
 
-        // Process ASSIGNMENT scores - only if ASSIGNMENT is supported
-        if (
-          supportedComponents.includes("ASSIGNMENT") &&
-          assignmentScores[student._id]
-        ) {
+        // Process ASSIGNMENT scores
+        if (assignmentScores[student._id]) {
           const assignmentScore = assignmentScores[student._id];
           studentScores.push({
             componentName: "ASSIGNMENT",
@@ -1264,10 +1020,6 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
       await scoreService.updateCourseScores(course._id, scoresToSubmit);
       setSuccess("All scores saved successfully!");
       setLastSaved(new Date());
-
-      // Force reload scores after saving to ensure UI is updated with latest data
-      await loadExistingScores();
-
       if (onSaveComplete) {
         onSaveComplete();
       }
@@ -1295,141 +1047,130 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
     // --- CA Export ---
     if (activeComponent.startsWith("CA")) {
       // Get the correct maximum marks based on course type and component
-      try {
-        const scaleConfig = getComponentScale(course.type, activeComponent);
-        const maxMarks = scaleConfig.maxMarks;
+      const scaleConfig = getComponentScale(course.type, activeComponent);
+      const maxMarks = scaleConfig.maxMarks;
 
-        // Remove Academic Year and Test Date from individual row headers
-        const headers = [
-          "SNo",
-          "Enrollment No",
-          "Name",
-          "Program",
-          "Semester",
-          // Academic Year and Test Date removed as they're in the header
-        ];
+      // Remove Academic Year and Test Date from individual row headers
+      const headers = [
+        "SNo",
+        "Enrollment No",
+        "Name",
+        "Program",
+        "Semester",
+        // Academic Year and Test Date removed as they're in the header
+      ];
 
-        const getTestDateForCA = (): string => {
-          if (!activeComponent.startsWith("CA") || !caScores[activeComponent]) {
-            return new Date().toLocaleDateString();
-          }
-
-          // Count occurrences of each date
-          const dateCounts: { [key: string]: number } = {};
-          let mostCommonDate = "";
-          let highestCount = 0;
-
-          // Loop through all students' data for this component
-          Object.values(caScores[activeComponent]).forEach((studentScore) => {
-            const date = studentScore.testDate || "";
-            if (date) {
-              dateCounts[date] = (dateCounts[date] || 0) + 1;
-
-              if (dateCounts[date] > highestCount) {
-                highestCount = dateCounts[date];
-                mostCommonDate = date;
-              }
-            }
-          });
-
-          return mostCommonDate || new Date().toLocaleDateString();
-        };
-
-        // For each question (Q1 to Q5), add columns for a, b, c, d, and total
-        for (let q = 1; q <= 5; q++) {
-          headers.push(
-            `Q${q}_a`,
-            `Q${q}_b`,
-            `Q${q}_c`,
-            `Q${q}_d`,
-            `Q${q}_total`
-          );
+      const getTestDateForCA = (): string => {
+        if (!activeComponent.startsWith("CA") || !caScores[activeComponent]) {
+          return new Date().toLocaleDateString();
         }
 
-        // Use dynamic maximum marks value based on course type
-        headers.push(
-          `Overall Score (OutOf${maxMarks})`,
-          "Overall Score (OutOf50)",
-          "Marks in Words"
-        );
+        // Count occurrences of each date
+        const dateCounts: { [key: string]: number } = {};
+        let mostCommonDate = "";
+        let highestCount = 0;
 
-        const csvRows: (string | number)[][] = [];
+        // Loop through all students' data for this component
+        Object.values(caScores[activeComponent]).forEach((studentScore) => {
+          const date = studentScore.testDate || "";
+          if (date) {
+            dateCounts[date] = (dateCounts[date] || 0) + 1;
 
-        // Prepend course info at the top including academic year and test date
-        csvRows.push([
-          `Course Code: ${course.code}`,
-          `Course Name: ${course.name}`,
-          `Course Type: ${course.type}`,
-          `Academic Year: ${academicYear}`,
-          `Test Date: ${getTestDateForCA()}`,
-        ]);
-
-        csvRows.push([]);
-        csvRows.push(headers);
-
-        students.forEach((student, index) => {
-          const row: (string | number)[] = [];
-          row.push(
-            index + 1,
-            student.registrationNumber,
-            student.name,
-            student.program,
-            student.semester
-            // Academic Year and Test Date removed as they're in the header
-          );
-
-          const caData = caScores[activeComponent]?.[student._id];
-          if (caData) {
-            // Remove test date from individual rows
-            const order = ["I", "II", "III", "IV", "V"] as const;
-            order.forEach((qKey) => {
-              const qData = caData[qKey] as QuestionPartScores;
-              row.push(
-                qData?.a ?? 0,
-                qData?.b ?? 0,
-                qData?.c ?? 0,
-                qData?.d ?? 0,
-                qData?.total ?? 0
-              );
-            });
-
-            // Use outOf20 field but display it with the correct maxMarks label
-            const scaledScore = caData.outOf20 ?? 0;
-            row.push(
-              scaledScore,
-              caData.outOf50 ?? 0,
-              numberToWords(scaledScore as number)
-            );
-          } else {
-            // No empty test date cell needed
-            for (let i = 0; i < 25; i++) {
-              // Adjusted count for removed columns
-              row.push(0);
+            if (dateCounts[date] > highestCount) {
+              highestCount = dateCounts[date];
+              mostCommonDate = date;
             }
           }
-          csvRows.push(row);
         });
 
-        const csvString = csvRows.map((row) => row.join(",")).join("\n");
-        const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.setAttribute(
-          "download",
-          `${activeComponent}_${course.code}_Scores.csv`
-        );
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      } catch (err) {
-        console.error("Error exporting CA scores:", err);
-        setError("Failed to export CA scores");
+        return mostCommonDate || new Date().toLocaleDateString();
+      };
+
+      // For each question (Q1 to Q5), add columns for a, b, c, d, and total
+      for (let q = 1; q <= 5; q++) {
+        headers.push(`Q${q}_a`, `Q${q}_b`, `Q${q}_c`, `Q${q}_d`, `Q${q}_total`);
       }
+
+      // Use dynamic maximum marks value based on course type
+      headers.push(
+        `Overall Score (OutOf${maxMarks})`,
+        "Overall Score (OutOf50)",
+        "Marks in Words"
+      );
+
+      const csvRows: (string | number)[][] = [];
+
+      // Prepend course info at the top including academic year and test date
+      csvRows.push([
+        `Course Code: ${course.code}`,
+        `Course Name: ${course.name}`,
+        `Course Type: ${course.type}`,
+        `Academic Year: ${academicYear}`,
+        `Test Date: ${getTestDateForCA()}`,
+      ]);
+
+      csvRows.push([]);
+      csvRows.push(headers);
+
+      students.forEach((student, index) => {
+        const row: (string | number)[] = [];
+        row.push(
+          index + 1,
+          student.registrationNumber,
+          student.name,
+          student.program,
+          student.semester
+          // Academic Year and Test Date removed as they're in the header
+        );
+
+        const caData = caScores[activeComponent]?.[student._id];
+        if (caData) {
+          // Remove test date from individual rows
+          const order = ["I", "II", "III", "IV", "V"] as const;
+          order.forEach((qKey) => {
+            const qData = caData[qKey] as QuestionPartScores;
+            row.push(
+              qData?.a ?? 0,
+              qData?.b ?? 0,
+              qData?.c ?? 0,
+              qData?.d ?? 0,
+              qData?.total ?? 0
+            );
+          });
+
+          // Use outOf20 field but display it with the correct maxMarks label
+          const scaledScore = caData.outOf20 ?? 0;
+          row.push(
+            scaledScore,
+            caData.outOf50 ?? 0,
+            numberToWords(scaledScore as number)
+          );
+        } else {
+          // No empty test date cell needed
+          for (let i = 0; i < 25; i++) {
+            // Adjusted count for removed columns
+            row.push(0);
+          }
+        }
+        csvRows.push(row);
+      });
+
+      const csvString = csvRows.map((row) => row.join(",")).join("\n");
+      const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute(
+        "download",
+        `${activeComponent}_${course.code}_Scores.csv`
+      );
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     }
 
     // --- LAB Export ---
-    else if (activeComponent === "LAB" && isSupportedComponent("LAB")) {
+    else if (activeComponent === "LAB") {
       try {
         // Get all lab sessions from all students and sort them by index
         const allSessions: LabSession[] = [];
@@ -1470,15 +1211,8 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
         uniqueSessionIndices.sort((a, b) => a - b);
 
         // Get LAB scale configuration
-        let maxMarks = 30; // Default value
-
-        try {
-          const scaleConfig = getComponentScale(course.type, "LAB");
-          maxMarks = scaleConfig.maxMarks;
-        } catch (err) {
-          console.warn("Error getting LAB scale config:", err);
-          // Use default value
-        }
+        const scaleConfig = getComponentScale(course.type, "LAB");
+        const maxMarks = scaleConfig.maxMarks;
 
         // Basic student info columns
         const headers = ["SNo", "Enrollment No", "Name", "Program", "Semester"];
@@ -1569,81 +1303,69 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
 
     // --- ASSIGNMENT Export ---
     else if (activeComponent === "ASSIGNMENT") {
-      try {
-        // Get ASSIGNMENT scale configuration
-        let maxMarks = 20; // Default value
+      // Get ASSIGNMENT scale configuration
+      const scaleConfig = getComponentScale(course.type, "ASSIGNMENT");
+      const maxMarks = scaleConfig.maxMarks;
 
-        try {
-          const scaleConfig = getComponentScale(course.type, "ASSIGNMENT");
-          maxMarks = scaleConfig.maxMarks;
-        } catch (err) {
-          console.warn("Error getting ASSIGNMENT scale config:", err);
-          // Use default value
-        }
+      // Remove Academic Year as it's in the header
+      const headers = [
+        "SNo",
+        "Enrollment No",
+        "Name",
+        "Program",
+        "Semester",
+        // Academic Year removed as it's in the header
+        "Assignment Obtained",
+        `Assignment Max Marks (${maxMarks})`,
+        "Marks in Words",
+      ];
 
-        // Remove Academic Year as it's in the header
-        const headers = [
-          "SNo",
-          "Enrollment No",
-          "Name",
-          "Program",
-          "Semester",
+      const csvRows: (string | number)[][] = [];
+
+      // Include global academicYear in the header
+      csvRows.push([
+        `Course Code: ${course.code}`,
+        `Course Name: ${course.name}`,
+        `Course Type: ${course.type}`,
+        `Academic Year: ${academicYear}`,
+      ]);
+
+      csvRows.push([]);
+      csvRows.push(headers);
+
+      students.forEach((student, index) => {
+        const row: (string | number)[] = [];
+        row.push(
+          index + 1,
+          student.registrationNumber,
+          student.name,
+          student.program,
+          student.semester
           // Academic Year removed as it's in the header
-          "Assignment Obtained",
-          `Assignment Max Marks (${maxMarks})`,
-          "Marks in Words",
-        ];
+        );
 
-        const csvRows: (string | number)[][] = [];
-
-        // Include global academicYear in the header
-        csvRows.push([
-          `Course Code: ${course.code}`,
-          `Course Name: ${course.name}`,
-          `Course Type: ${course.type}`,
-          `Academic Year: ${academicYear}`,
-        ]);
-
-        csvRows.push([]);
-        csvRows.push(headers);
-
-        students.forEach((student, index) => {
-          const row: (string | number)[] = [];
+        const assignData = assignmentScores[student._id];
+        if (assignData) {
           row.push(
-            index + 1,
-            student.registrationNumber,
-            student.name,
-            student.program,
-            student.semester
-            // Academic Year removed as it's in the header
+            assignData.obtainedMarks || 0,
+            assignData.maxMarks || maxMarks,
+            numberToWords(assignData.obtainedMarks || 0)
           );
+        } else {
+          row.push(0, maxMarks, "ZERO");
+        }
+        csvRows.push(row);
+      });
 
-          const assignData = assignmentScores[student._id];
-          if (assignData) {
-            row.push(
-              assignData.obtainedMarks || 0,
-              assignData.maxMarks || maxMarks,
-              numberToWords(assignData.obtainedMarks || 0)
-            );
-          } else {
-            row.push(0, maxMarks, "ZERO");
-          }
-          csvRows.push(row);
-        });
-
-        const csvString = csvRows.map((row) => row.join(",")).join("\n");
-        const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.setAttribute("download", `ASSIGNMENT_${course.code}_Scores.csv`);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      } catch (err) {
-        console.error("Error exporting ASSIGNMENT scores:", err);
-        setError("Failed to export ASSIGNMENT scores");
-      }
+      const csvString = csvRows.map((row) => row.join(",")).join("\n");
+      const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `ASSIGNMENT_${course.code}_Scores.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     }
 
     // --- TOTAL Export ---
@@ -1690,21 +1412,15 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
           headers.push(escapeCSV("Name"));
           headers.push(escapeCSV("Semester"));
 
-          // Get component headers properly formatted - only include components that exist for this course
+          // Get component headers properly formatted
           const components = Object.keys(course.evaluationScheme);
           components.forEach((comp) => {
-            try {
-              const scale = getComponentScale(course.type, comp);
-              headers.push(
-                escapeCSV(
-                  `${comp} (Out of ${scale.maxMarks}, Pass ${scale.passingMarks})`
-                )
-              );
-            } catch (err) {
-              console.warn(`Error getting scale for ${comp}:`, err);
-              // Use default values
-              headers.push(escapeCSV(`${comp}`));
-            }
+            const scale = getComponentScale(course.type, comp);
+            headers.push(
+              escapeCSV(
+                `${comp} (Out of ${scale.maxMarks}, Pass ${scale.passingMarks})`
+              )
+            );
           });
 
           headers.push(escapeCSV("TOTAL"));
@@ -1742,33 +1458,18 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
             rawScore: number,
             componentName: string
           ) => {
-            try {
-              const scale = getComponentScale(course.type, componentName);
-              return Math.round(rawScore * (scale.conversionFactor || 1));
-            } catch (err) {
-              console.warn(`Error scaling ${componentName}:`, err);
-              // Default to no scaling if there's an error
-              return rawScore;
-            }
+            const scale = getComponentScale(course.type, componentName);
+            return Math.round(rawScore * (scale.conversionFactor || 1));
           };
 
           // Process each student
           const passingThreshold = getCourseTotalPassingMarks(course.type);
-
-          // Determine if this course type has LAB constraint
-          let hasLabConstraint = false;
-          try {
-            const labConstraintTypes = [
-              "ug-integrated",
-              "pg-integrated",
-              "ug-lab-only",
-              "pg-lab-only",
-            ];
-            const courseTypeLower = course.type.toLowerCase();
-            hasLabConstraint = labConstraintTypes.includes(courseTypeLower);
-          } catch (err) {
-            console.warn("Error checking lab constraint:", err);
-          }
+          const labConstraintTypes = [
+            "ug-integrated",
+            "pg-integrated",
+            "ug-lab-only",
+            "pg-lab-only",
+          ];
 
           students.forEach((student, index) => {
             const rowData = [];
@@ -1785,17 +1486,9 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
             let totalScore = 0;
             components.forEach((componentName) => {
               const rawScore = getComponentScore(student._id, componentName);
-
-              // Only scale the component score if it's supported by this course type
-              let scaledScore = 0;
-              try {
-                scaledScore = scaleComponentScore(rawScore, componentName);
-                totalScore += scaledScore;
-              } catch (err) {
-                console.warn(`Error processing ${componentName}:`, err);
-              }
-
+              const scaledScore = scaleComponentScore(rawScore, componentName);
               rowData.push(escapeCSV(scaledScore));
+              totalScore += scaledScore;
             });
 
             // Add total score
@@ -1803,10 +1496,12 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
 
             // Calculate pass/fail status
             let status = "FAIL";
+            const courseTypeLower = course.type.toLowerCase();
 
-            if (hasLabConstraint && components.includes("LAB")) {
+            if (labConstraintTypes.includes(courseTypeLower)) {
               // Check lab component if applicable
-              try {
+              const labIndex = components.indexOf("LAB");
+              if (labIndex !== -1) {
                 const labRaw = getComponentScore(student._id, "LAB");
                 const labScale = getComponentScale(course.type, "LAB");
                 const labScaled = scaleComponentScore(labRaw, "LAB");
@@ -1817,12 +1512,8 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
                 ) {
                   status = "PASS";
                 }
-              } catch (err) {
-                console.warn("Error checking LAB passing:", err);
-                // Fall back to just total score check
-                if (totalScore >= passingThreshold) {
-                  status = "PASS";
-                }
+              } else if (totalScore >= passingThreshold) {
+                status = "PASS";
               }
             } else if (totalScore >= passingThreshold) {
               status = "PASS";
@@ -1900,7 +1591,7 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
           onReconfigure={handleReconfigure} // Pass the reconfigure handler
         />
       );
-    } else if (activeComponent === "LAB" && isSupportedComponent("LAB")) {
+    } else if (activeComponent === "LAB") {
       return (
         <LabScoreEntryComponent
           students={students}
@@ -1920,13 +1611,6 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
           onScoresChange={handleAssignmentScoreChange}
           initialScores={assignmentScores}
         />
-      );
-    } else if (activeComponent === "LAB" && !isSupportedComponent("LAB")) {
-      return (
-        <Alert severity="warning" sx={{ mt: 2 }}>
-          LAB component is not supported for this course type ({course.type}).
-          Please use a different component.
-        </Alert>
       );
     }
     return null;

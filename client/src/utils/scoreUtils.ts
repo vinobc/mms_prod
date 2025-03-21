@@ -149,6 +149,23 @@ export const COURSE_SCALES: Record<CourseType, CourseScaleConfig> = {
 };
 
 /**
+ * Check if a component is supported by the given course type
+ */
+export function isComponentSupported(
+  courseType: CourseType,
+  componentName: string
+): boolean {
+  const courseScale = COURSE_SCALES[courseType];
+  if (!courseScale) {
+    return false;
+  }
+
+  return Object.keys(courseScale)
+    .filter((key) => key !== "totalPassing")
+    .includes(componentName);
+}
+
+/**
  * Get the scale configuration for a component based on course type
  * Now supports course-specific configuration with part weights
  */
@@ -157,10 +174,35 @@ export function getComponentScale(
   componentName: string,
   courseConfig?: any // NEW: Add course-specific config parameter
 ): ComponentScaleConfig {
+  // Normalize component name and course type to handle case differences
+  const normalizedComponentName = componentName.toUpperCase();
+  const normalizedCourseType = courseType.toUpperCase();
+
+  // If this is a LAB component for a UG course (not integrated), provide safe defaults
+  // instead of throwing an error that could break the application
+  if (normalizedComponentName === "LAB" && normalizedCourseType === "UG") {
+    console.warn(
+      `LAB component requested for UG course type - providing safe defaults`
+    );
+    return { maxMarks: 0, passingMarks: 0 };
+  }
+
   const courseScale = COURSE_SCALES[courseType];
   if (!courseScale) {
     console.error(`Unknown course type: ${courseType}`);
     return { maxMarks: 100, passingMarks: 40 };
+  }
+
+  // Check if component exists for this course type
+  const supportedComponents = Object.keys(courseScale).filter(
+    (key) => key !== "totalPassing"
+  );
+
+  if (!supportedComponents.includes(componentName)) {
+    console.error(
+      `Component ${componentName} not configured for course type ${courseType}`
+    );
+    return { maxMarks: 0, passingMarks: 0 };
   }
 
   const config = courseScale[componentName];
@@ -206,12 +248,18 @@ export function convertCAScore(
   courseType: CourseType,
   componentName: string
 ): number {
-  const config = getComponentScale(courseType, componentName);
-  if (config.conversionFactor === undefined) {
-    return score; // No conversion needed
-  }
+  try {
+    const config = getComponentScale(courseType, componentName);
+    if (config.conversionFactor === undefined) {
+      return score; // No conversion needed
+    }
 
-  return Math.round(score * config.conversionFactor);
+    return Math.round(score * config.conversionFactor);
+  } catch (err) {
+    console.warn(`Error converting ${componentName} score:`, err);
+    // Default to no conversion if there's an error
+    return score;
+  }
 }
 
 /**
@@ -228,18 +276,36 @@ export const convertLabScore = (
   // Default to 0 if no score
   if (!averageScore || isNaN(averageScore)) return 0;
 
-  // Normalize courseType for case-insensitive comparison
-  const courseTypeLower = courseType.toLowerCase();
+  try {
+    // Normalize courseType for case-insensitive comparison
+    const courseTypeLower = courseType.toLowerCase();
 
-  // For lab-only courses, scale to 100
-  if (courseTypeLower === "ug-lab-only" || courseTypeLower === "pg-lab-only") {
-    // Scale from out of 10 to out of 100
-    return Math.round(averageScore * 10);
-  }
-  // For integrated courses, scale to 30
-  else {
-    // Scale from out of 10 to out of 30
-    return Math.round(averageScore * 3);
+    // For lab-only courses, scale to 100
+    if (
+      courseTypeLower === "ug-lab-only" ||
+      courseTypeLower === "pg-lab-only"
+    ) {
+      // Scale from out of 10 to out of 100
+      return Math.round(averageScore * 10);
+    }
+    // For integrated courses, scale to 30
+    else if (
+      courseTypeLower === "ug-integrated" ||
+      courseTypeLower === "pg-integrated"
+    ) {
+      // Scale from out of 10 to out of 30
+      return Math.round(averageScore * 3);
+    }
+    // For regular courses with no LAB component
+    else {
+      // Just return the average, since LAB shouldn't be used
+      console.warn(`LAB component not supported for course type ${courseType}`);
+      return averageScore;
+    }
+  } catch (err) {
+    console.warn(`Error converting lab score for ${courseType}:`, err);
+    // Default to just returning the score
+    return averageScore;
   }
 };
 
@@ -253,15 +319,21 @@ export function getPartMaxMarks(
   part: string,
   courseConfig?: any
 ): number {
-  // Get component configuration (default or course-specific)
-  const config = getComponentScale(courseType, componentName, courseConfig);
+  try {
+    // Get component configuration (default or course-specific)
+    const config = getComponentScale(courseType, componentName, courseConfig);
 
-  // If no part weights available, return default
-  if (!config.partWeights) return 2.5; // Default value (50/20)
+    // If no part weights available, return default
+    if (!config.partWeights) return 2.5; // Default value (50/20)
 
-  // Create the part key (e.g., "Ia", "IIb")
-  const partKey = `${question}${part}` as keyof typeof config.partWeights;
+    // Create the part key (e.g., "Ia", "IIb")
+    const partKey = `${question}${part}` as keyof typeof config.partWeights;
 
-  // Return the specific part weight
-  return config.partWeights[partKey] || 2.5;
+    // Return the specific part weight
+    return config.partWeights[partKey] || 2.5;
+  } catch (err) {
+    console.warn(`Error getting part max marks:`, err);
+    // Default value if error occurs
+    return 2.5;
+  }
 }
