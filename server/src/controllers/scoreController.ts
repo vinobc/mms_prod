@@ -104,8 +104,15 @@ export default {
                 componentName: score.componentName,
                 maxMarks: Number(score.maxMarks),
                 obtainedMarks: Number(score.obtainedMarks) || 0,
+                testDate: score.testDate || "",
               }))
             : [];
+          console.log(
+            "Processed scores with testDates:",
+            processedScores.map(
+              (s) => `${s.componentName}: ${s.testDate || "NO DATE"}`
+            )
+          );
 
           // Process detailed questions and their parts
           const processedQuestions: ProcessedQuestion[] = [];

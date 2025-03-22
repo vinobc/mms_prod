@@ -167,6 +167,11 @@ const ScoreSchema: Schema = new Schema(
             message: "Obtained marks significantly exceed maximum marks",
           },
         },
+        testDate: {
+          type: String,
+          required: false,
+          trim: true,
+        },
       },
     ],
     // New questions structure

@@ -116,6 +116,7 @@ interface AssignmentScore {
 // Define question keys as a type
 type QuestionKey = "I" | "II" | "III" | "IV" | "V";
 const questionKeys: QuestionKey[] = ["I", "II", "III", "IV", "V"];
+const partKeys = ["a", "b", "c", "d"];
 
 // Date format for consistency
 const DATE_FORMAT = "dd/MM/yyyy";
@@ -169,11 +170,26 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
   useEffect(() => {
     if (!course) return;
     const components = Object.keys(course.evaluationScheme);
-    if (components.length > 0 && !activeComponent) {
+    // if (components.length > 0 && !activeComponent) {
+    //   setActiveComponent(components[0]);
+    // }
+    if (
+      activeComponent &&
+      activeComponent !== "TOTAL" &&
+      !components.includes(activeComponent)
+    ) {
+      console.log(
+        `Component ${activeComponent} not available for this course. Resetting to default.`
+      );
+      // Reset to the first available component or TOTAL
+      setActiveComponent(components.length > 0 ? components[0] : "TOTAL");
+    }
+    // If no active component is set, set it to the first available one
+    else if (!activeComponent && components.length > 0) {
       setActiveComponent(components[0]);
     }
     loadExistingScores();
-  }, [course, students]);
+  }, [course, activeComponent]);
 
   // Get academic year from students
   useEffect(() => {
@@ -257,7 +273,35 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
 
       try {
         setAutoSaving(true);
-        const scoresToSubmit = prepareScoresForSubmission();
+
+        // Create a validated copy of caScores
+        const validatedCAScores = { ...caScores };
+        Object.keys(validatedCAScores).forEach((component) => {
+          Object.keys(validatedCAScores[component]).forEach((studentId) => {
+            // Apply validation to ensure outOf50 is capped at 50
+            const studentScore = validatedCAScores[component][studentId];
+            studentScore.outOf50 = Math.min(studentScore.outOf50, 50);
+
+            // Recalculate outOf20
+            try {
+              const conversionFactor =
+                getComponentScale(course.type, component).conversionFactor ||
+                0.4;
+              studentScore.outOf20 = Math.round(
+                studentScore.outOf50 * conversionFactor
+              );
+            } catch (err) {
+              console.warn(
+                `Error calculating conversion for ${component}:`,
+                err
+              );
+              studentScore.outOf20 = Math.round(studentScore.outOf50 * 0.4);
+            }
+          });
+        });
+
+        // Use the validated score data
+        const scoresToSubmit = prepareScoresForSubmission(validatedCAScores);
 
         // Only save if there are scores to submit
         if (scoresToSubmit.length > 0) {
@@ -372,16 +416,18 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
 
           students.forEach((student) => {
             if (student._id) {
-              updatedCAScores[component][student._id] = {
-                I: { a: 0, b: 0, c: 0, d: 0, total: 0 },
-                II: { a: 0, b: 0, c: 0, d: 0, total: 0 },
-                III: { a: 0, b: 0, c: 0, d: 0, total: 0 },
-                IV: { a: 0, b: 0, c: 0, d: 0, total: 0 },
-                V: { a: 0, b: 0, c: 0, d: 0, total: 0 },
-                outOf50: 0,
-                outOf20: 0,
-                testDate: "",
-              };
+              updatedCAScores[component][student._id] = JSON.parse(
+                JSON.stringify({
+                  I: { a: 0, b: 0, c: 0, d: 0, total: 0 },
+                  II: { a: 0, b: 0, c: 0, d: 0, total: 0 },
+                  III: { a: 0, b: 0, c: 0, d: 0, total: 0 },
+                  IV: { a: 0, b: 0, c: 0, d: 0, total: 0 },
+                  V: { a: 0, b: 0, c: 0, d: 0, total: 0 },
+                  outOf50: 0,
+                  outOf20: 0,
+                  testDate: format(new Date(), DATE_FORMAT),
+                })
+              );
             }
           });
         }
@@ -622,13 +668,13 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
 
             // Now process each component's questions to extract detailed scores
             Object.entries(questionsByComponent).forEach(
-              ([componentName, questions]) => {
-                if (!updatedCAScores[componentName]) {
-                  updatedCAScores[componentName] = {};
+              ([component, questions]) => {
+                if (!updatedCAScores[component]) {
+                  updatedCAScores[component] = {};
                 }
 
-                if (!updatedCAScores[componentName][studentId]) {
-                  updatedCAScores[componentName][studentId] = {
+                if (!updatedCAScores[component][studentId]) {
+                  updatedCAScores[component][studentId] = {
                     I: { a: 0, b: 0, c: 0, d: 0, total: 0 },
                     II: { a: 0, b: 0, c: 0, d: 0, total: 0 },
                     III: { a: 0, b: 0, c: 0, d: 0, total: 0 },
@@ -636,12 +682,12 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
                     V: { a: 0, b: 0, c: 0, d: 0, total: 0 },
                     outOf50: 0,
                     outOf20: 0,
-                    testDate: testDatesByComponent[componentName] || "", // Use stored date if available
+                    testDate: testDatesByComponent[component] || "", // Use stored date if available
                   };
-                } else if (testDatesByComponent[componentName]) {
+                } else if (testDatesByComponent[component]) {
                   // If we have a date from the question metadata, update it in the score
-                  updatedCAScores[componentName][studentId].testDate =
-                    testDatesByComponent[componentName];
+                  updatedCAScores[component][studentId].testDate =
+                    testDatesByComponent[component];
                 }
 
                 // Extract question details
@@ -656,9 +702,9 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
                   if (
                     q.meta &&
                     q.meta.date &&
-                    updatedCAScores[componentName][studentId]
+                    updatedCAScores[component][studentId]
                   ) {
-                    updatedCAScores[componentName][studentId].testDate =
+                    updatedCAScores[component][studentId].testDate =
                       q.meta.date;
                   }
 
@@ -679,28 +725,64 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
 
                   // Extract part values (a, b, c, d)
                   q.parts.forEach((part: any) => {
-                    const partKey = String(part.partName).toLowerCase();
-                    if (["a", "b", "c", "d"].includes(partKey)) {
+                    const partName = String(part.partName).toLowerCase();
+                    if (["a", "b", "c", "d"].includes(partName)) {
                       const typedQuestionKey = questionKey as QuestionKey;
                       const studentScores =
-                        updatedCAScores[componentName][studentId];
+                        updatedCAScores[component][studentId];
                       const questionScores = studentScores[
                         typedQuestionKey
                       ] as QuestionPartScores;
 
-                      // Type-safe way to set the part score
+                      // Add a validation for part weights
+                      const componentConfig =
+                        course?.componentConfigs?.[component];
+                      const partWeights = componentConfig?.partWeights || {
+                        Ia: 2.5,
+                        Ib: 2.5,
+                        Ic: 2.5,
+                        Id: 2.5,
+                        IIa: 2.5,
+                        IIb: 2.5,
+                        IIc: 2.5,
+                        IId: 2.5,
+                        IIIa: 2.5,
+                        IIIb: 2.5,
+                        IIIc: 2.5,
+                        IIId: 2.5,
+                        IVa: 2.5,
+                        IVb: 2.5,
+                        IVc: 2.5,
+                        IVd: 2.5,
+                        Va: 2.5,
+                        Vb: 2.5,
+                        Vc: 2.5,
+                        Vd: 2.5,
+                      };
+
+                      // Only set values for parts with weights > 0
+                      const partKey = `${typedQuestionKey}${partName}` as any;
+                      const partWeight = partWeights[partKey] || 0;
                       const partValue = Number(part.obtainedMarks) || 0;
-                      (questionScores as any)[partKey] = partValue;
+
+                      if (partWeight > 0) {
+                        (questionScores as any)[partName] = partValue;
+                      } else {
+                        // Force zero for zero-weighted parts
+                        (questionScores as any)[partName] = 0;
+                      }
+
                       console.log(
-                        `Setting ${componentName}.${questionKey}.${partKey} = ${partValue} for student ${studentId}`
+                        `Setting ${component}.${questionKey}.${partName} = ${
+                          (questionScores as any)[partName]
+                        } for student ${studentId}`
                       );
                     }
                   });
 
                   // Recalculate total for this question
                   const typedQuestionKey = questionKey as QuestionKey;
-                  const studentScores =
-                    updatedCAScores[componentName][studentId];
+                  const studentScores = updatedCAScores[component][studentId];
                   const questionScores = studentScores[
                     typedQuestionKey
                   ] as QuestionPartScores;
@@ -712,7 +794,7 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
                 });
 
                 // Calculate overall outOf50 score as sum of all question totals
-                const studentScores = updatedCAScores[componentName][studentId];
+                const studentScores = updatedCAScores[component][studentId];
                 const totalI =
                   (studentScores.I as QuestionPartScores).total || 0;
                 const totalII =
@@ -727,30 +809,31 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
                 const calculatedTotal =
                   totalI + totalII + totalIII + totalIV + totalV;
 
-                // Only update if we have detailed scores
-                // Always update the outOf50 score, even if it's zero
-                studentScores.outOf50 = calculatedTotal;
+                // Cap at 50 and update
+                studentScores.outOf50 = Math.min(calculatedTotal, 50);
                 console.log(
-                  `Setting ${componentName}.outOf50 = ${calculatedTotal} for student ${studentId}`
+                  `Setting ${component}.outOf50 = ${studentScores.outOf50} for student ${studentId}`
                 );
 
                 // Apply conversion factor
                 try {
                   const conversionFactor =
-                    getComponentScale(course.type, componentName)
+                    getComponentScale(course.type, component)
                       .conversionFactor || 0.4;
                   studentScores.outOf20 = Math.round(
-                    calculatedTotal * conversionFactor
+                    studentScores.outOf50 * conversionFactor
                   );
                   console.log(
-                    `Setting ${componentName}.outOf20 = ${studentScores.outOf20} for student ${studentId}`
+                    `Setting ${component}.outOf20 = ${studentScores.outOf20} for student ${studentId}`
                   );
                 } catch (err) {
                   console.warn(
-                    `Error calculating conversion for ${componentName}:`,
+                    `Error calculating conversion for ${component}:`,
                     err
                   );
-                  studentScores.outOf20 = Math.round(calculatedTotal * 0.4); // Default to 0.4
+                  studentScores.outOf20 = Math.round(
+                    studentScores.outOf50 * 0.4
+                  ); // Default to 0.4
                 }
               }
             );
@@ -967,6 +1050,14 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
     _event: React.SyntheticEvent,
     newValue: string
   ) => {
+    const supportedComponents = Object.keys(course?.evaluationScheme || {});
+    const isValid =
+      supportedComponents.includes(newValue) || newValue === "TOTAL";
+
+    if (!isValid) {
+      console.warn(`Attempted to select invalid component: ${newValue}`);
+      return; // Don't set invalid components
+    }
     setActiveComponent(newValue);
 
     // When changing components, force reload if the current view is empty
@@ -981,10 +1072,21 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
   };
 
   const handleCAScoreChange = (component: string, scores: DetailedScore) => {
-    setCAScores((prev) => ({
-      ...prev,
-      [component]: scores,
-    }));
+    setCAScores((prev) => {
+      // Create a completely new object reference to prevent cross-contamination
+      const newScores = { ...prev };
+
+      // Set only the specific component's scores, leaving others untouched
+      newScores[component] = JSON.parse(JSON.stringify(scores)); // Deep copy to break references
+
+      console.log(
+        `Updated ONLY ${component} scores, total components: ${
+          Object.keys(newScores).length
+        }`
+      );
+
+      return newScores;
+    });
   };
 
   const handleLabScoreChange = (scores: { [studentId: string]: LabScore }) => {
@@ -1006,7 +1108,6 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
     setAssignmentScores(scores);
   };
 
-  // UPDATED: Prepare scores for submission with proper test date and part weights
   const prepareScoresForSubmission = () => {
     const formattedScores: any[] = [];
 
@@ -1014,17 +1115,6 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
     const supportedComponents = course
       ? Object.keys(course.evaluationScheme || {})
       : [];
-
-    // Filter LAB component for UG course type to prevent saving invalid component data
-    if (course && course.type.toUpperCase() === "UG") {
-      const labIndex = supportedComponents.findIndex(
-        (comp) => comp.toUpperCase() === "LAB"
-      );
-      if (labIndex >= 0) {
-        console.warn("Removing LAB component from UG course before submission");
-        supportedComponents.splice(labIndex, 1);
-      }
-    }
 
     students.forEach((student) => {
       try {
@@ -1042,6 +1132,8 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
           ) {
             const studentScore = caScores[componentName][student._id];
             const questions: any[] = [];
+            const testDate = studentScore.testDate || "";
+            console.log(`Using test date for ${componentName}: ${testDate}`);
 
             // Get component configuration for part weights
             const componentConfig = course?.componentConfigs?.[componentName];
@@ -1069,8 +1161,9 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
             };
 
             // Extract testDate from student score data
-            const testDate = studentScore.testDate || "";
-            console.log(`Saving test date for ${componentName}:`, testDate);
+            // const testDate = studentScore.testDate || "";
+            // Add the main component score with testDate
+            const validatedOutOf50 = Math.min(studentScore.outOf50 || 0, 50);
 
             // Process each question (I, II, III, IV, V) and its parts (a,b,c,d)
             questionKeys.forEach((questionNum, idx) => {
@@ -1098,47 +1191,59 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
                 const cWeight = partWeights[`${questionNum}c`] || 2.5;
                 const dWeight = partWeights[`${questionNum}d`] || 2.5;
 
-                parts.push({
-                  partName: "a",
-                  maxMarks: aWeight,
-                  obtainedMarks: questionScores.a || 0,
-                });
-                parts.push({
-                  partName: "b",
-                  maxMarks: bWeight,
-                  obtainedMarks: questionScores.b || 0,
-                });
-                parts.push({
-                  partName: "c",
-                  maxMarks: cWeight,
-                  obtainedMarks: questionScores.c || 0,
-                });
-                parts.push({
-                  partName: "d",
-                  maxMarks: dWeight,
-                  obtainedMarks: questionScores.d || 0,
-                });
+                if (aWeight > 0) {
+                  parts.push({
+                    partName: "a",
+                    maxMarks: aWeight,
+                    obtainedMarks: questionScores.a || 0,
+                  });
+                }
 
-                questions.push({
-                  questionNumber: actualQuestionNumber,
-                  meta: {
-                    component: componentName,
-                    date: testDate, // Include test date in meta
-                  },
-                  parts,
-                });
+                if (bWeight > 0) {
+                  parts.push({
+                    partName: "b",
+                    maxMarks: bWeight,
+                    obtainedMarks: questionScores.b || 0,
+                  });
+                }
+
+                if (cWeight > 0) {
+                  parts.push({
+                    partName: "c",
+                    maxMarks: cWeight,
+                    obtainedMarks: questionScores.c || 0,
+                  });
+                }
+
+                if (dWeight > 0) {
+                  parts.push({
+                    partName: "d",
+                    maxMarks: dWeight,
+                    obtainedMarks: questionScores.d || 0,
+                  });
+                }
+
+                if (parts.length > 0) {
+                  questions.push({
+                    questionNumber: actualQuestionNumber,
+                    meta: {
+                      component: componentName,
+                      date: testDate,
+                    },
+                    parts,
+                  });
+                }
               }
             });
 
             // Add all questions to the aggregated list
             aggregatedQuestions = aggregatedQuestions.concat(questions);
 
-            // Add the main component score
             studentScores.push({
               componentName,
               maxMarks: 50,
-              obtainedMarks: studentScore.outOf50 || 0,
-              testDate: testDate, // Add testDate to the component score
+              obtainedMarks: validatedOutOf50,
+              testDate: testDate,
             });
           }
         });
@@ -1185,25 +1290,6 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
               // Preserve the original index if available
               index: session.index !== undefined ? session.index : position,
             }));
-
-            // Also represent lab sessions as questions for backward compatibility
-            sortedSessions.forEach((session, index) => {
-              aggregatedQuestions.push({
-                questionNumber: 20 + index, // Use high numbers to avoid conflicts
-                meta: {
-                  type: "lab_session",
-                  date: session.date,
-                  index: session.index, // Include index in meta for recovery
-                },
-                parts: [
-                  {
-                    partName: "score",
-                    maxMarks: session.maxMarks || 10,
-                    obtainedMarks: session.obtainedMarks || 0,
-                  },
-                ],
-              });
-            });
           }
         }
 
@@ -1260,10 +1346,30 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
     try {
       setSaving(true);
       setError(null);
-      const scoresToSubmit = prepareScoresForSubmission();
+
+      // Validate all scores before saving
+      const validatedCAScores = validateAllScores();
+
+      // Use validated scores when preparing data for submission
+      const scoresToSubmit = prepareScoresForSubmission(validatedCAScores);
+      scoresToSubmit.forEach((data) => {
+        if (data.scores) {
+          data.scores.forEach((score) => {
+            console.log(
+              `Saving ${score.componentName} with date: ${
+                score.testDate || "NO DATE"
+              }`
+            );
+          });
+        }
+      });
+
       await scoreService.updateCourseScores(course._id, scoresToSubmit);
       setSuccess("All scores saved successfully!");
       setLastSaved(new Date());
+
+      // Update state with validated scores
+      setCAScores(validatedCAScores);
 
       // Force reload scores after saving to ensure UI is updated with latest data
       await loadExistingScores();
@@ -1273,18 +1379,61 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
       }
     } catch (error: any) {
       console.error("Error saving scores:", error);
-      // Special handling for disabled status
-      if (error.response?.data?.status === "DISABLED") {
-        setError(
-          error.response.data.message || "Score entry is currently disabled"
-        );
-        setScoreEntryEnabled(false);
-      } else {
-        setError(error.response?.data?.message || "Failed to save scores");
-      }
+      // Error handling...
     } finally {
       setSaving(false);
     }
+  };
+
+  const validateAllScores = () => {
+    const validatedCAScores = { ...caScores };
+
+    // Validate CA scores
+    Object.keys(validatedCAScores).forEach((component) => {
+      Object.keys(validatedCAScores[component]).forEach((studentId) => {
+        // Apply strict validation for total scores
+        const studentScore = validatedCAScores[component][studentId];
+
+        // Cap at 50
+        studentScore.outOf50 = Math.min(studentScore.outOf50 || 0, 50);
+
+        // Recalculate outOf20
+        try {
+          const conversionFactor =
+            getComponentScale(course.type, component).conversionFactor || 0.4;
+          studentScore.outOf20 = Math.round(
+            studentScore.outOf50 * conversionFactor
+          );
+        } catch (err) {
+          console.warn(`Error calculating conversion:`, err);
+          studentScore.outOf20 = Math.round(studentScore.outOf50 * 0.4);
+        }
+
+        // Check for zero-weighted parts
+        const componentConfig = course?.componentConfigs?.[component];
+        if (componentConfig?.partWeights) {
+          const partWeights = componentConfig.partWeights;
+
+          // For each question
+          questionKeys.forEach((questionKey) => {
+            const questionScores = studentScore[questionKey];
+
+            // For each part (a, b, c, d)
+            partKeys.forEach((partKey) => {
+              const weightKey = `${questionKey}${partKey}` as any;
+              const partWeight = partWeights[weightKey] || 0;
+
+              // Zero out parts with zero weight
+              if (partWeight <= 0) {
+                (questionScores as any)[partKey] = 0;
+              }
+            });
+          });
+        }
+      });
+    });
+
+    return validatedCAScores;
   };
 
   // ======================================
@@ -1859,6 +2008,19 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
 
   // UPDATED: Modified renderComponent to use the state and handlers from the top level
   const renderComponent = () => {
+    const supportedComponents = Object.keys(course?.evaluationScheme || {});
+    const isSupported =
+      supportedComponents.includes(activeComponent) ||
+      activeComponent === "TOTAL";
+
+    if (!isSupported) {
+      return (
+        <Alert severity="warning" sx={{ mt: 2 }}>
+          Component {activeComponent} is not configured for this course type (
+          {course?.type}). Please select another component.
+        </Alert>
+      );
+    }
     if (activeComponent === "TOTAL") {
       return (
         <TotalScoreComponent
@@ -1889,13 +2051,15 @@ const DynamicScoreEntry: React.FC<DynamicScoreEntryProps> = ({
       // If configured, continue to score entry with course-specific config
       return (
         <CAScoreEntryComponent
+          key={`score-entry-${activeComponent}-${course._id}`}
           students={students}
           componentName={activeComponent}
           courseType={course.type}
           courseConfig={course.componentConfigs?.[activeComponent]} // Pass course-specific config
-          onScoresChange={(scores) =>
-            handleCAScoreChange(activeComponent, scores)
-          }
+          onScoresChange={(scores) => {
+            console.log(`Updating scores for ${activeComponent} only`);
+            handleCAScoreChange(activeComponent, scores);
+          }}
           initialScores={caScores[activeComponent]}
           onReconfigure={handleReconfigure} // Pass the reconfigure handler
         />

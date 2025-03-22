@@ -18,7 +18,11 @@ import {
   TableHead,
   TableRow,
   Snackbar,
+  Chip,
+  Tooltip,
+  IconButton,
 } from "@mui/material";
+import { Warning as WarningIcon } from "@mui/icons-material";
 import { Course } from "../../types";
 import { courseService } from "../../services/courseService";
 
@@ -119,6 +123,19 @@ const CAConfigComponent: React.FC<CAConfigComponentProps> = ({
     setPartWeights(updatedWeights);
   };
 
+  // Function to zero out all parts for a question
+  const zeroQuestionWeight = (question: string) => {
+    const parts = ["a", "b", "c", "d"];
+
+    const updatedWeights = { ...partWeights };
+    parts.forEach((part) => {
+      const key = `${question}${part}` as keyof PartWeights;
+      updatedWeights[key] = 0;
+    });
+
+    setPartWeights(updatedWeights);
+  };
+
   useEffect(() => {
     // Load existing configuration if available
     if (course?.componentConfigs && course.componentConfigs[componentName]) {
@@ -199,7 +216,7 @@ const CAConfigComponent: React.FC<CAConfigComponentProps> = ({
 
   // Function to handle closing the flash message
   const handleFlashClose = (
-    event?: React.SyntheticEvent | Event,
+    _event?: React.SyntheticEvent | Event,
     reason?: string
   ) => {
     if (reason === "clickaway") {
@@ -294,6 +311,11 @@ const CAConfigComponent: React.FC<CAConfigComponentProps> = ({
             configuration will be saved for this specific course and component.
           </Typography>
 
+          <Alert severity="info" sx={{ mb: 2 }}>
+            Set a part to 0 marks if students should not answer that part. Parts
+            with 0 marks will be disabled in the score entry form.
+          </Alert>
+
           {error && (
             <Alert
               severity="error"
@@ -346,9 +368,27 @@ const CAConfigComponent: React.FC<CAConfigComponentProps> = ({
                   return (
                     <TableRow key={question}>
                       <TableCell component="th" scope="row">
-                        <Typography variant="subtitle2">
-                          Question {question}
-                        </Typography>
+                        <Box
+                          sx={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                          }}
+                        >
+                          <Typography variant="subtitle2">
+                            Question {question}
+                          </Typography>
+                          <Chip
+                            label={`Total: ${questionTotal.toFixed(1)}`}
+                            color={
+                              Math.abs(questionTotal - 10) > 0.01
+                                ? "warning"
+                                : "success"
+                            }
+                            size="small"
+                            sx={{ mr: 1 }}
+                          />
+                        </Box>
                       </TableCell>
 
                       {parts.map((part) => {
@@ -406,13 +446,29 @@ const CAConfigComponent: React.FC<CAConfigComponentProps> = ({
                       </TableCell>
 
                       <TableCell align="right">
-                        <Button
-                          size="small"
-                          onClick={() => distributeQuestionWeight(question, 10)}
-                          variant="outlined"
-                        >
-                          Distribute Evenly
-                        </Button>
+                        <Grid container spacing={1}>
+                          <Grid item>
+                            <Button
+                              size="small"
+                              onClick={() =>
+                                distributeQuestionWeight(question, 10)
+                              }
+                              variant="outlined"
+                            >
+                              Distribute Evenly
+                            </Button>
+                          </Grid>
+                          <Grid item>
+                            <Button
+                              size="small"
+                              onClick={() => zeroQuestionWeight(question)}
+                              variant="outlined"
+                              color="warning"
+                            >
+                              Zero All
+                            </Button>
+                          </Grid>
+                        </Grid>
                       </TableCell>
                     </TableRow>
                   );
@@ -428,9 +484,22 @@ const CAConfigComponent: React.FC<CAConfigComponentProps> = ({
                     <Typography
                       variant="subtitle1"
                       fontWeight="bold"
-                      color={isValid ? "success.main" : "error.main"}
+                      color={
+                        total > 50
+                          ? "error.main"
+                          : isValid
+                          ? "success.main"
+                          : "warning.main"
+                      }
                     >
                       {total.toFixed(1)}/50
+                      {total > 50 && (
+                        <Tooltip title="Warning: Total exceeds maximum of 50. Scores will be capped at 50.">
+                          <IconButton color="error" size="small">
+                            <WarningIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      )}
                     </Typography>
                   </TableCell>
                   <TableCell align="right">

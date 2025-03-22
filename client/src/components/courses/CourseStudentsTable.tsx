@@ -116,8 +116,17 @@ const CourseStudentsTable: React.FC<CourseStudentsTableProps> = ({
     onConfirm: () => {},
   });
 
-  // Academic year state
-  const [academicYear, setAcademicYear] = useState(academicYearOptions[0]);
+  // Academic year state - modified to use localStorage
+  const [academicYear, setAcademicYear] = useState<string>(() => {
+    // Try to get course-specific academic year from localStorage
+    const savedYear = localStorage.getItem(`courseAcademicYear_${course._id}`);
+    if (savedYear && academicYearOptions.includes(savedYear)) {
+      return savedYear;
+    }
+
+    // Fallback to default academic year
+    return localStorage.getItem("defaultAcademicYear") || "2023-24";
+  });
 
   // Student selection dialog
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -160,9 +169,14 @@ const CourseStudentsTable: React.FC<CourseStudentsTableProps> = ({
 
       setStudents(studentRows);
 
-      // If we have students, set academicYear from the first student
+      // If we have students, get the academic year from the first student
+      // This ensures we're using the right year for the course
       if (studentRows.length > 0 && courseStudents[0].academicYear) {
-        setAcademicYear(courseStudents[0].academicYear);
+        const studentsYear = courseStudents[0].academicYear;
+        setAcademicYear(studentsYear);
+
+        // Save this as the course-specific academic year
+        localStorage.setItem(`courseAcademicYear_${course._id}`, studentsYear);
       }
     } catch (error) {
       console.error("Failed to load students:", error);
@@ -176,7 +190,17 @@ const CourseStudentsTable: React.FC<CourseStudentsTableProps> = ({
     e: React.ChangeEvent<{ value: unknown }>
   ) => {
     if (!isAdmin) return; // Only proceed if user is admin
-    setAcademicYear(e.target.value as string);
+
+    const newYear = e.target.value as string;
+    setAcademicYear(newYear);
+
+    // Store in localStorage for this specific course
+    localStorage.setItem(`courseAcademicYear_${course._id}`, newYear);
+
+    // Also update the default academic year
+    localStorage.setItem("defaultAcademicYear", newYear);
+
+    setSuccess(`Academic year updated to ${newYear}`);
   };
 
   // Open the add student dialog
@@ -297,6 +321,12 @@ const CourseStudentsTable: React.FC<CourseStudentsTableProps> = ({
               existingStudent._id,
               courseId
             );
+
+            // Update the student's academic year
+            await studentService.updateStudent(existingStudent._id, {
+              academicYear,
+            });
+
             setSuccess("Existing student added to this course successfully");
           } else {
             console.log("Creating new student");
@@ -307,7 +337,7 @@ const CourseStudentsTable: React.FC<CourseStudentsTableProps> = ({
               program: student.program as ProgramType,
               school: student.school, // Include school
               semester: student.semester,
-              academicYear: academicYear, // Use the global academic year
+              academicYear: academicYear, // Use the current academic year
               courseIds: [courseId],
             });
             setSuccess("New student added successfully");
@@ -320,7 +350,7 @@ const CourseStudentsTable: React.FC<CourseStudentsTableProps> = ({
         // For existing students
         const updateData: any = {
           semester: student.semester,
-          academicYear: academicYear, // Use the global academic year
+          academicYear: academicYear, // Use the current academic year
           school: student.school, // Include school
         };
 
@@ -634,6 +664,11 @@ const CourseStudentsTable: React.FC<CourseStudentsTableProps> = ({
                 existingStudent._id,
                 course._id
               );
+
+              // Update their academic year
+              await studentService.updateStudent(existingStudent._id, {
+                academicYear: academicYear,
+              });
             } else {
               // Create new student
               await studentService.createStudent({
@@ -642,7 +677,7 @@ const CourseStudentsTable: React.FC<CourseStudentsTableProps> = ({
                 program: student.program as ProgramType,
                 school: student.school, // Include school
                 semester: student.semester,
-                academicYear: academicYear, // Use global academic year
+                academicYear: academicYear, // Use current academic year
                 courseIds: [course._id],
               });
             }
@@ -650,7 +685,7 @@ const CourseStudentsTable: React.FC<CourseStudentsTableProps> = ({
             // For existing students
             const updateData: any = {
               semester: student.semester,
-              academicYear: academicYear, // Use global academic year
+              academicYear: academicYear, // Use current academic year
               school: student.school, // Include school
             };
 

@@ -5,7 +5,7 @@ interface ComponentScaleConfig {
   passingMarks: number; // Passing threshold
   conversionFactor?: number; // For CA components: how to convert from the 50-point scale
   partWeights?: {
-    // NEW: Support for individual part weights
+    // Support for individual part weights
     Ia: number;
     Ib: number;
     Ic: number;
@@ -329,11 +329,104 @@ export function getPartMaxMarks(
     // Create the part key (e.g., "Ia", "IIb")
     const partKey = `${question}${part}` as keyof typeof config.partWeights;
 
-    // Return the specific part weight
-    return config.partWeights[partKey] || 2.5;
+    // Return the specific part weight, or default if not found
+    const weight = config.partWeights[partKey];
+    if (weight === undefined || weight === null) {
+      console.warn(`No weight found for ${partKey}, using default 2.5`);
+      return 2.5;
+    }
+
+    return weight;
   } catch (err) {
-    console.warn(`Error getting part max marks:`, err);
+    console.warn(`Error getting part max marks for ${question}${part}:`, err);
     // Default value if error occurs
     return 2.5;
   }
+}
+
+/**
+ * Validates and caps the CA component scores to ensure they don't exceed maxima
+ * @param scores The student scores for a CA component
+ * @param courseType The course type
+ * @param componentName The component name (CA1, CA2, CA3)
+ * @returns Validated scores
+ */
+export function validateCAScores(
+  scores: any,
+  courseType: CourseType,
+  componentName: string,
+  courseConfig?: any
+): any {
+  // Create a copy to avoid mutating the original
+  const validatedScores = { ...scores };
+
+  // Get component scale for conversion factor
+  let conversionFactor = 0.4; // Default
+  try {
+    conversionFactor =
+      getComponentScale(courseType, componentName, courseConfig)
+        .conversionFactor || 0.4;
+  } catch (err) {
+    console.warn(`Error getting conversion factor, using default:`, err);
+  }
+
+  // Cap outOf50 at maximum of 50
+  validatedScores.outOf50 = Math.min(validatedScores.outOf50 || 0, 50);
+
+  // Recalculate outOf20 based on capped outOf50
+  validatedScores.outOf20 = Math.round(
+    validatedScores.outOf50 * conversionFactor
+  );
+
+  return validatedScores;
+}
+
+/**
+ * Creates a deep clone of an object, breaking all references
+ * This is safer than JSON.parse(JSON.stringify()) for complex objects
+ * @param obj The object to clone
+ * @returns A deep copy with no shared references
+ */
+export function deepClone<T>(obj: T): T {
+  if (obj === null || typeof obj !== "object") {
+    return obj;
+  }
+
+  // Handle Date
+  if (obj instanceof Date) {
+    return new Date(obj.getTime()) as any;
+  }
+
+  // Handle Array
+  if (Array.isArray(obj)) {
+    return obj.map((item) => deepClone(item)) as any;
+  }
+
+  // Handle Object
+  if (obj instanceof Object) {
+    const copy: any = {};
+    Object.keys(obj).forEach((key) => {
+      copy[key] = deepClone((obj as any)[key]);
+    });
+    return copy;
+  }
+
+  throw new Error(`Unable to copy object: ${obj}`);
+}
+
+/**
+ * Creates empty score structure for a student
+ * @returns A fresh score structure with no shared references
+ */
+export function createEmptyScoreStructure() {
+  return {
+    I: { a: 0, b: 0, c: 0, d: 0, total: 0 },
+    II: { a: 0, b: 0, c: 0, d: 0, total: 0 },
+    III: { a: 0, b: 0, c: 0, d: 0, total: 0 },
+    IV: { a: 0, b: 0, c: 0, d: 0, total: 0 },
+    V: { a: 0, b: 0, c: 0, d: 0, total: 0 },
+    outOf50: 0,
+    outOf20: 0,
+    testDate: new Date().toISOString().split("T")[0],
+  };
 }

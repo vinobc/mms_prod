@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useMemo, memo } from "react";
+import { debounce } from "lodash";
 import {
   Box,
   Table,
@@ -19,9 +20,14 @@ import {
 import {
   Edit as EditIcon,
   CalendarToday as CalendarIcon,
+  Warning as WarningIcon,
 } from "@mui/icons-material";
 import { Student, CourseType } from "../../types";
-import { getComponentScale, getPartMaxMarks } from "../../utils/scoreUtils";
+import {
+  getComponentScale,
+  getPartMaxMarks,
+  validateCAScores,
+} from "../../utils/scoreUtils";
 import format from "date-fns/format";
 
 interface QuestionPartScores {
@@ -59,8 +65,53 @@ interface CAScoreEntryComponentProps {
 
 type QuestionKey = "I" | "II" | "III" | "IV" | "V";
 
-// Helper for date format
-const DATE_FORMAT = "dd/MM/yyyy";
+// Date format constants
+const ISO_DATE_FORMAT = "yyyy-MM-dd";
+const DISPLAY_DATE_FORMAT = "dd/MM/yyyy";
+
+// Format date for display and storage
+const formatDateForDisplay = (date: string | undefined): string => {
+  if (!date) return format(new Date(), ISO_DATE_FORMAT);
+
+  try {
+    // If it's already in DISPLAY_DATE_FORMAT, convert to ISO
+    if (date.includes("/")) {
+      const [day, month, year] = date.split("/");
+      return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+    }
+    // Otherwise, assume it's already in ISO format
+    return date;
+  } catch (err) {
+    console.error("Error formatting date:", err);
+    return format(new Date(), ISO_DATE_FORMAT);
+  }
+};
+
+const formatDateForStorage = (date: string): string => {
+  if (!date) return format(new Date(), DISPLAY_DATE_FORMAT);
+
+  try {
+    // Handle ISO format
+    if (date.includes("-")) {
+      const [year, month, day] = date.split("-");
+      return `${day}/${month}/${year}`;
+    }
+    // Otherwise assume it's already in display format
+    return date;
+  } catch (err) {
+    console.error("Error formatting date for storage:", err);
+    return format(new Date(), DISPLAY_DATE_FORMAT);
+  }
+};
+
+// Create a serializer for deep comparison
+const serializeScores = (scores: DetailedScore): string => {
+  return JSON.stringify(scores, (key, value) => {
+    // Skip the testDate in serialization since it doesn't affect scoring logic
+    if (key === "testDate") return undefined;
+    return value;
+  });
+};
 
 const CAScoreEntryComponent: React.FC<CAScoreEntryComponentProps> = ({
   students,
@@ -74,34 +125,87 @@ const CAScoreEntryComponent: React.FC<CAScoreEntryComponentProps> = ({
   // State for all scores (by student ID)
   const [scores, setScores] = useState<DetailedScore>({});
 
+  // Previous scores ref to prevent unnecessary updates
+  const prevSerializedScoresRef = React.useRef<string | null>(null);
+
   // State for test date (shared across all students for this component)
   const [testDate, setTestDate] = useState<string>(
-    format(new Date(), DATE_FORMAT)
+    format(new Date(), ISO_DATE_FORMAT)
   );
 
   // State to track if the component has been initialized with data
   const [initialized, setInitialized] = useState<boolean>(false);
 
+  // Create a stable debounced version of the score change handler
+  const debouncedOnScoresChange = useCallback(
+    debounce((updatedScores: DetailedScore) => {
+      if (!onScoresChange) return;
+
+      // Serialize for deep comparison
+      const serializedScores = serializeScores(updatedScores);
+
+      // Skip update if nothing changed in the scores (except dates)
+      if (serializedScores === prevSerializedScoresRef.current) return;
+
+      // Store serialized version for future comparison
+      prevSerializedScoresRef.current = serializedScores;
+
+      console.log(`Notifying parent of score changes in ${componentName}`);
+      onScoresChange(updatedScores);
+    }, 500),
+    [onScoresChange, componentName]
+  );
+
   // Initialize scores from props or create empty structure
   useEffect(() => {
-    if (initialScores) {
-      console.log(
-        `Receiving initialScores for ${componentName}:`,
-        initialScores
-      );
-      setScores(initialScores);
+    if (!initialized && initialScores) {
+      console.log(`Receiving initialScores for ${componentName}`);
+
+      // Create a deep copy with validated totals
+      const validatedScores: DetailedScore = {};
+
+      Object.keys(initialScores).forEach((studentId) => {
+        const studentScore = initialScores[studentId];
+
+        // Apply validation to ensure outOf50 is capped at 50
+        validatedScores[studentId] = {
+          ...studentScore,
+          outOf50: Math.min(studentScore.outOf50, 50),
+        };
+
+        // Recalculate outOf20 based on validated outOf50
+        try {
+          const conversionFactor =
+            getComponentScale(courseType, componentName, courseConfig)
+              .conversionFactor || 0.4;
+          validatedScores[studentId].outOf20 = Math.round(
+            validatedScores[studentId].outOf50 * conversionFactor
+          );
+        } catch (err) {
+          console.warn(
+            `Error calculating conversion for ${componentName}:`,
+            err
+          );
+          validatedScores[studentId].outOf20 = Math.round(
+            validatedScores[studentId].outOf50 * 0.4
+          );
+        }
+      });
+
+      // Set the initial serialized scores for comparison
+      prevSerializedScoresRef.current = serializeScores(validatedScores);
+
+      setScores(validatedScores);
 
       // If scores exist, check for a test date
       const firstStudentKey = Object.keys(initialScores)[0];
       if (firstStudentKey && initialScores[firstStudentKey]?.testDate) {
-        setTestDate(
-          initialScores[firstStudentKey].testDate ||
-            format(new Date(), DATE_FORMAT)
-        );
+        const dateString = initialScores[firstStudentKey].testDate || "";
+        setTestDate(formatDateForDisplay(dateString));
       }
 
       setInitialized(true);
-    } else {
+    } else if (!initialized) {
       // Initialize empty scores when no initial data is provided
       console.log(
         `No initialScores for ${componentName}, initializing empty scores`
@@ -118,28 +222,52 @@ const CAScoreEntryComponent: React.FC<CAScoreEntryComponentProps> = ({
             V: { a: 0, b: 0, c: 0, d: 0, total: 0 },
             outOf50: 0,
             outOf20: 0,
-            testDate: format(new Date(), DATE_FORMAT),
+            testDate: formatDateForStorage(format(new Date(), ISO_DATE_FORMAT)),
           };
         }
       });
 
+      prevSerializedScoresRef.current = serializeScores(emptyScores);
       setScores(emptyScores);
       setInitialized(true);
     }
-  }, [initialScores, students, componentName]);
+  }, [
+    initialScores,
+    students,
+    componentName,
+    courseType,
+    courseConfig,
+    initialized,
+  ]);
 
   // Update test date across all student scores
   useEffect(() => {
     if (!initialized) return;
 
+    const storedDate = formatDateForStorage(testDate);
+
+    // Check if any student score already has this date to avoid unnecessary updates
+    let needsUpdate = false;
+    const studentIds = Object.keys(scores);
+
+    if (studentIds.length > 0) {
+      const existingDate = scores[studentIds[0]]?.testDate;
+      if (existingDate !== storedDate) {
+        needsUpdate = true;
+      }
+    }
+
+    if (!needsUpdate) return;
+
     setScores((prev) => {
+      // Create a new object to trigger a proper re-render
       const updated = { ...prev };
 
       Object.keys(updated).forEach((studentId) => {
         if (updated[studentId]) {
           updated[studentId] = {
             ...updated[studentId],
-            testDate: testDate,
+            testDate: storedDate,
           };
         }
       });
@@ -150,103 +278,186 @@ const CAScoreEntryComponent: React.FC<CAScoreEntryComponentProps> = ({
 
   // Effect to notify parent of changes
   useEffect(() => {
-    if (initialized && onScoresChange) {
-      console.log(`Notifying parent of score changes in ${componentName}`);
-      onScoresChange(scores);
+    if (initialized && Object.keys(scores).length > 0) {
+      debouncedOnScoresChange(scores);
     }
-  }, [scores, onScoresChange, initialized, componentName]);
+
+    // Cleanup function to cancel any pending debounced calls
+    return () => {
+      debouncedOnScoresChange.cancel();
+    };
+  }, [scores, debouncedOnScoresChange, initialized, testDate]);
 
   // Handle score change for a specific question part
-  const handleScoreChange = (
-    studentId: string,
-    questionNumber: string,
-    part: string,
-    value: string
-  ) => {
-    const numValue = Number(value);
-    console.log(
-      `Changing ${componentName} score: student=${studentId}, Q${questionNumber}${part}=${value}`
-    );
+  const handleScoreChange = useCallback(
+    (
+      studentId: string,
+      questionNumber: string,
+      part: string,
+      value: string
+    ) => {
+      const numValue = Number(value);
 
-    setScores((prev) => {
-      const updatedScores = { ...prev };
+      // Get max marks for this specific question part
+      const maxMarksForPart = getMaxMarks(
+        questionNumber,
+        part,
+        courseType,
+        componentName,
+        courseConfig
+      );
 
-      // Ensure student object exists
-      if (!updatedScores[studentId]) {
-        console.log(`Creating new score object for student ${studentId}`);
-        updatedScores[studentId] = {
-          I: { a: 0, b: 0, c: 0, d: 0, total: 0 },
-          II: { a: 0, b: 0, c: 0, d: 0, total: 0 },
-          III: { a: 0, b: 0, c: 0, d: 0, total: 0 },
-          IV: { a: 0, b: 0, c: 0, d: 0, total: 0 },
-          V: { a: 0, b: 0, c: 0, d: 0, total: 0 },
-          outOf50: 0,
-          outOf20: 0,
-          testDate: testDate,
-        };
-      }
-
-      const studentScore = updatedScores[studentId];
-      const questionKey = questionNumber as QuestionKey;
-      const questionScores = studentScore[questionKey] as QuestionPartScores;
-
-      // Update the specific part
-      (questionScores as any)[part] = isNaN(numValue) ? 0 : numValue;
-
-      // Recalculate total for this question
-      questionScores.total =
-        questionScores.a +
-        questionScores.b +
-        questionScores.c +
-        questionScores.d;
-
-      // Recalculate total out of 50
-      studentScore.outOf50 =
-        (studentScore.I as QuestionPartScores).total +
-        (studentScore.II as QuestionPartScores).total +
-        (studentScore.III as QuestionPartScores).total +
-        (studentScore.IV as QuestionPartScores).total +
-        (studentScore.V as QuestionPartScores).total;
-
-      // Calculate outOf20 based on conversion factor
-      try {
-        const conversionFactor =
-          getComponentScale(courseType, componentName, courseConfig)
-            .conversionFactor || 0.4;
-
-        studentScore.outOf20 = Math.round(
-          studentScore.outOf50 * conversionFactor
+      // Skip updates for zero-weighted parts
+      if (maxMarksForPart <= 0) {
+        console.log(
+          `Skipping update for zero-weighted part ${questionNumber}${part}`
         );
-      } catch (err) {
-        console.warn(`Error calculating conversion for ${componentName}:`, err);
-        studentScore.outOf20 = Math.round(studentScore.outOf50 * 0.4); // Default to 0.4
+        return;
       }
 
-      return updatedScores;
-    });
-  };
+      // Cap the value at the maximum allowed for this part
+      const validatedValue = Math.min(
+        isNaN(numValue) ? 0 : Math.max(0, numValue),
+        maxMarksForPart
+      );
+
+      setScores((prev) => {
+        // First check if there's an actual change
+        const prevScore = prev[studentId];
+        const currentPartValue =
+          (prevScore?.[questionNumber as QuestionKey] as any)?.[part] || 0;
+
+        if (currentPartValue === validatedValue) {
+          // No change, return previous state to prevent unnecessary updates
+          return prev;
+        }
+
+        // Create new state copies for immutability
+        const updatedScores = { ...prev };
+
+        // Ensure student object exists
+        if (!updatedScores[studentId]) {
+          updatedScores[studentId] = {
+            I: { a: 0, b: 0, c: 0, d: 0, total: 0 },
+            II: { a: 0, b: 0, c: 0, d: 0, total: 0 },
+            III: { a: 0, b: 0, c: 0, d: 0, total: 0 },
+            IV: { a: 0, b: 0, c: 0, d: 0, total: 0 },
+            V: { a: 0, b: 0, c: 0, d: 0, total: 0 },
+            outOf50: 0,
+            outOf20: 0,
+            testDate: formatDateForStorage(testDate),
+          };
+        } else {
+          // Create a new reference for this student's scores
+          updatedScores[studentId] = { ...updatedScores[studentId] };
+
+          // Create a new reference for this question's scores
+          const qKey = questionNumber as QuestionKey;
+          updatedScores[studentId][qKey] = {
+            ...updatedScores[studentId][qKey],
+          };
+        }
+
+        const studentScore = updatedScores[studentId];
+        const questionKey = questionNumber as QuestionKey;
+        const questionScores = studentScore[questionKey] as QuestionPartScores;
+
+        // Update the specific part with the validated value
+        (questionScores as any)[part] = validatedValue;
+
+        // Recalculate total for this question
+        questionScores.total =
+          questionScores.a +
+          questionScores.b +
+          questionScores.c +
+          questionScores.d;
+
+        // Recalculate total out of 50 with strict validation
+        let calculatedTotal =
+          (studentScore.I as QuestionPartScores).total +
+          (studentScore.II as QuestionPartScores).total +
+          (studentScore.III as QuestionPartScores).total +
+          (studentScore.IV as QuestionPartScores).total +
+          (studentScore.V as QuestionPartScores).total;
+
+        // Apply a strict validation to ensure the total cannot exceed 50
+        studentScore.outOf50 = Math.min(calculatedTotal, 50);
+
+        // Calculate outOf20 based on conversion factor
+        try {
+          const conversionFactor =
+            getComponentScale(courseType, componentName, courseConfig)
+              .conversionFactor || 0.4;
+
+          studentScore.outOf20 = Math.round(
+            studentScore.outOf50 * conversionFactor
+          );
+        } catch (err) {
+          console.warn(
+            `Error calculating conversion for ${componentName}:`,
+            err
+          );
+          studentScore.outOf20 = Math.round(studentScore.outOf50 * 0.4); // Default to 0.4
+        }
+
+        return updatedScores;
+      });
+    },
+    [courseType, componentName, courseConfig, testDate]
+  );
 
   // Handle test date change
   const handleTestDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setTestDate(e.target.value);
-    console.log(`Test date changed to: ${e.target.value}`);
+    const newISODate = e.target.value; // This will be in yyyy-MM-dd format
+    setTestDate(newISODate);
+
+    console.log(
+      `Date changed to ${newISODate}, converting to display format...`
+    );
+    const storedDate = formatDateForStorage(newISODate);
+    console.log(`Stored date format: ${storedDate}`);
+
+    // Update all student scores with the new date
+    setScores((prev) => {
+      const updated = { ...prev };
+
+      Object.keys(updated).forEach((studentId) => {
+        if (updated[studentId]) {
+          updated[studentId] = {
+            ...updated[studentId],
+            testDate: formatDateForStorage(newISODate),
+          };
+          console.log(
+            `Updated test date for student ${studentId} to ${storedDate}`
+          );
+        }
+      });
+      if (onScoresChange) {
+        onScoresChange(updated);
+      }
+
+      return updated;
+    });
   };
 
   // Get max marks for a specific part
-  const getMaxMarks = (question: string, part: string) => {
-    try {
-      return getPartMaxMarks(
-        courseType,
-        componentName,
-        question,
-        part,
-        courseConfig
-      );
-    } catch (err) {
-      console.warn(`Error getting max marks for ${question}${part}:`, err);
-      return 2.5; // Default value
-    }
-  };
+  const getMaxMarks = useCallback(
+    (question: string, part: string): number => {
+      try {
+        return getPartMaxMarks(
+          courseType,
+          componentName,
+          question,
+          part,
+          courseConfig
+        );
+      } catch (err) {
+        console.warn(`Error getting max marks for ${question}${part}:`, err);
+        return 2.5; // Default value
+      }
+    },
+    [courseType, componentName, courseConfig]
+  );
 
   // Calculate the column span for the header
   const getHeaderColSpan = () => {
@@ -255,28 +466,31 @@ const CAScoreEntryComponent: React.FC<CAScoreEntryComponentProps> = ({
   };
 
   // Handle click on reconfigure button
-  const handleReconfigure = () => {
+  const handleReconfigure = useCallback(() => {
     if (onReconfigure) {
       onReconfigure();
     }
-  };
+  }, [onReconfigure]);
 
   // Define question keys and part keys for easier iteration
   const questionKeys: QuestionKey[] = ["I", "II", "III", "IV", "V"];
   const partKeys = ["a", "b", "c", "d"];
 
   // Get scale information for this component
-  let maxMarks = 20;
-  let passingMarks = 8;
+  const { maxMarks, passingMarks } = useMemo(() => {
+    let maxM = 20;
+    let passM = 8;
 
-  try {
-    const scale = getComponentScale(courseType, componentName);
-    maxMarks = scale.maxMarks;
-    passingMarks = scale.passingMarks;
-  } catch (err) {
-    console.warn(`Error getting scale for ${componentName}:`, err);
-    // Use defaults
-  }
+    try {
+      const scale = getComponentScale(courseType, componentName);
+      maxM = scale.maxMarks;
+      passM = scale.passingMarks;
+    } catch (err) {
+      console.warn(`Error getting scale for ${componentName}:`, err);
+    }
+
+    return { maxMarks: maxM, passingMarks: passM };
+  }, [courseType, componentName]);
 
   return (
     <Box sx={{ mt: 3 }}>
@@ -349,50 +563,54 @@ const CAScoreEntryComponent: React.FC<CAScoreEntryComponentProps> = ({
         <Table size="small">
           <TableHead>
             <TableRow>
-              <TableCell rowSpan={2} sx={{ width: "5%" }}>
+              <TableCell rowSpan={2} sx={{ width: "4%" }}>
                 SNo.
               </TableCell>
               <TableCell rowSpan={2} sx={{ width: "15%" }}>
                 Enrollment No.
               </TableCell>
-              <TableCell rowSpan={2} sx={{ width: "20%" }}>
+              <TableCell rowSpan={2} sx={{ width: "15%" }}>
                 Name
               </TableCell>
-              <TableCell
-                colSpan={getHeaderColSpan()}
-                align="center"
-                sx={{ backgroundColor: "#f5f5f5" }}
-              >
-                Question I
+              <TableCell rowSpan={2} sx={{ width: "10%" }}>
+                Program
               </TableCell>
-              <TableCell
-                colSpan={getHeaderColSpan()}
-                align="center"
-                sx={{ backgroundColor: "#f5f5f5" }}
-              >
-                Question II
-              </TableCell>
-              <TableCell
-                colSpan={getHeaderColSpan()}
-                align="center"
-                sx={{ backgroundColor: "#f5f5f5" }}
-              >
-                Question III
-              </TableCell>
-              <TableCell
-                colSpan={getHeaderColSpan()}
-                align="center"
-                sx={{ backgroundColor: "#f5f5f5" }}
-              >
-                Question IV
-              </TableCell>
-              <TableCell
-                colSpan={getHeaderColSpan()}
-                align="center"
-                sx={{ backgroundColor: "#f5f5f5" }}
-              >
-                Question V
-              </TableCell>
+
+              {questionKeys.map((question) => {
+                // Calculate total weight for this question
+                const questionTotalWeight = partKeys.reduce((sum, part) => {
+                  return sum + getMaxMarks(question, part);
+                }, 0);
+
+                return (
+                  <TableCell
+                    key={`question-${question}`}
+                    colSpan={getHeaderColSpan()}
+                    align="center"
+                    sx={{ backgroundColor: "#f5f5f5" }}
+                  >
+                    <Box
+                      sx={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Typography component="span">
+                        Question {question}
+                      </Typography>
+                      <Chip
+                        label={`Total: ${questionTotalWeight.toFixed(1)}`}
+                        color={
+                          questionTotalWeight === 0 ? "default" : "primary"
+                        }
+                        size="small"
+                        sx={{ ml: 1, fontSize: "0.7rem" }}
+                      />
+                    </Box>
+                  </TableCell>
+                );
+              })}
               <TableCell rowSpan={2} align="center" sx={{ width: "8%" }}>
                 Out_of_50
               </TableCell>
@@ -407,19 +625,39 @@ const CAScoreEntryComponent: React.FC<CAScoreEntryComponentProps> = ({
               {/* Parts headers for each question */}
               {questionKeys.map((question) => (
                 <React.Fragment key={`parts-${question}`}>
-                  {partKeys.map((part) => (
-                    <TableCell
-                      key={`${question}-${part}`}
-                      align="center"
-                      sx={{ fontWeight: "bold" }}
-                    >
-                      <Tooltip
-                        title={`Max: ${getMaxMarks(question, part)} marks`}
+                  {partKeys.map((part) => {
+                    const maxMarksForPart = getMaxMarks(question, part);
+                    const isZero = maxMarksForPart <= 0;
+
+                    return (
+                      <TableCell
+                        key={`${question}-${part}`}
+                        align="center"
+                        sx={{
+                          fontWeight: "bold",
+                          backgroundColor: isZero
+                            ? "rgba(200, 200, 200, 0.3)"
+                            : "inherit",
+                        }}
                       >
-                        <Box>{part}</Box>
-                      </Tooltip>
-                    </TableCell>
-                  ))}
+                        <Box>
+                          {part}
+                          <Box
+                            sx={{
+                              fontSize: "0.75rem",
+                              fontWeight: "normal",
+                              color: isZero
+                                ? "text.disabled"
+                                : "text.secondary",
+                              mt: 0.5,
+                            }}
+                          >
+                            Max: {maxMarksForPart}
+                          </Box>
+                        </Box>
+                      </TableCell>
+                    );
+                  })}
                   <TableCell align="center" sx={{ fontWeight: "bold" }}>
                     Total
                   </TableCell>
@@ -438,7 +676,7 @@ const CAScoreEntryComponent: React.FC<CAScoreEntryComponentProps> = ({
                 V: { a: 0, b: 0, c: 0, d: 0, total: 0 },
                 outOf50: 0,
                 outOf20: 0,
-                testDate: testDate,
+                testDate: formatDateForStorage(testDate),
               };
 
               // Function to convert a number to words
@@ -462,6 +700,9 @@ const CAScoreEntryComponent: React.FC<CAScoreEntryComponentProps> = ({
                   .join(" ");
               };
 
+              // Ensure total is capped at 50
+              const cappedTotal = Math.min(studentScores.outOf50, 50);
+
               return (
                 <TableRow
                   key={student._id}
@@ -477,6 +718,22 @@ const CAScoreEntryComponent: React.FC<CAScoreEntryComponentProps> = ({
                   <TableCell>{index + 1}</TableCell>
                   <TableCell>{student.registrationNumber}</TableCell>
                   <TableCell>{student.name}</TableCell>
+                  <TableCell>
+                    <Tooltip title={student.program}>
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          fontWeight: "medium",
+                          color: "text.primary",
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                        }}
+                      >
+                        {student.program}
+                      </Typography>
+                    </Tooltip>
+                  </TableCell>
 
                   {/* Question parts for each question (I to V) */}
                   {questionKeys.map((questionKey) => {
@@ -494,6 +751,7 @@ const CAScoreEntryComponent: React.FC<CAScoreEntryComponentProps> = ({
                           );
                           const value = (questionScores as any)[part] || 0;
                           const isMaxed = value >= maxMarksForPart;
+                          const isZeroWeighted = maxMarksForPart <= 0;
 
                           return (
                             <TableCell
@@ -503,7 +761,7 @@ const CAScoreEntryComponent: React.FC<CAScoreEntryComponentProps> = ({
                             >
                               <TextField
                                 type="number"
-                                value={value}
+                                value={isZeroWeighted ? 0 : value}
                                 onChange={(e) =>
                                   handleScoreChange(
                                     student._id,
@@ -514,19 +772,38 @@ const CAScoreEntryComponent: React.FC<CAScoreEntryComponentProps> = ({
                                 }
                                 inputProps={{
                                   min: 0,
-                                  max: maxMarksForPart * 1.05, // Allow slight overage
+                                  max: maxMarksForPart,
                                   step: 0.5,
                                   style: {
                                     textAlign: "center",
                                     padding: "6px",
                                     backgroundColor: isMaxed
                                       ? "rgba(76, 175, 80, 0.1)"
+                                      : isZeroWeighted
+                                      ? "rgba(200, 200, 200, 0.3)"
                                       : "inherit",
                                   },
                                 }}
                                 variant="outlined"
                                 size="small"
-                                sx={{ width: "50px" }}
+                                sx={{
+                                  width: "50px",
+                                  "& .Mui-error": {
+                                    color: "error.main",
+                                  },
+                                  "& .Mui-disabled": {
+                                    backgroundColor: "rgba(200, 200, 200, 0.3)",
+                                  },
+                                }}
+                                disabled={isZeroWeighted}
+                                error={value > maxMarksForPart}
+                                helperText={
+                                  value > maxMarksForPart
+                                    ? `Max: ${maxMarksForPart}`
+                                    : isZeroWeighted
+                                    ? "Max: 0"
+                                    : ""
+                                }
                               />
                             </TableCell>
                           );
@@ -540,7 +817,7 @@ const CAScoreEntryComponent: React.FC<CAScoreEntryComponentProps> = ({
                             fontWeight: "bold",
                           }}
                         >
-                          {questionScores.total}
+                          {questionScores.total.toFixed(1)}
                         </TableCell>
                       </React.Fragment>
                     );
@@ -548,7 +825,16 @@ const CAScoreEntryComponent: React.FC<CAScoreEntryComponentProps> = ({
 
                   {/* Final scores */}
                   <TableCell align="center" sx={{ fontWeight: "bold" }}>
-                    {studentScores.outOf50}
+                    {cappedTotal.toFixed(1)}
+                    {studentScores.outOf50 > 50 && (
+                      <Tooltip title="Score capped at maximum 50">
+                        <WarningIcon
+                          color="warning"
+                          fontSize="small"
+                          sx={{ ml: 0.5, verticalAlign: "middle" }}
+                        />
+                      </Tooltip>
+                    )}
                   </TableCell>
                   <TableCell
                     align="center"
@@ -575,4 +861,5 @@ const CAScoreEntryComponent: React.FC<CAScoreEntryComponentProps> = ({
   );
 };
 
-export default CAScoreEntryComponent;
+// Use memo to prevent unnecessary re-renders of the entire component
+export default memo(CAScoreEntryComponent);

@@ -18,9 +18,10 @@ import {
 import { Add as AddIcon, Delete as DeleteIcon } from "@mui/icons-material";
 import { Student, CourseType } from "../../types";
 import { getComponentScale, convertLabScore } from "../../utils/scoreUtils";
+import { debounce } from "lodash";
 
 // Helper function to format number to words
-const numberToWords = (num) => {
+const numberToWords = (num: number) => {
   const digitWords = [
     "ZERO",
     "ONE",
@@ -61,32 +62,6 @@ interface LabScoreEntryComponentProps {
   initialScores?: { [studentId: string]: LabScore };
 }
 
-// Create a memoized cell component to prevent unnecessary re-renders
-const ScoreCell = memo(
-  ({
-    value,
-    onChange,
-  }: {
-    value: number;
-    onChange: (value: string) => void;
-  }) => {
-    return (
-      <TextField
-        type="number"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        inputProps={{
-          min: 0,
-          max: 10,
-          style: { textAlign: "center" },
-        }}
-        size="small"
-        sx={{ width: 60 }}
-      />
-    );
-  }
-);
-
 const LabScoreEntryComponent: React.FC<LabScoreEntryComponentProps> = ({
   students,
   componentName,
@@ -119,11 +94,21 @@ const LabScoreEntryComponent: React.FC<LabScoreEntryComponentProps> = ({
     [studentId: string]: LabSession[];
   }>({});
 
-  // DEBUG FUNCTION to check score state
-  const logScoreState = useCallback(() => {
-    console.log("Current session dates:", sessionDates);
-    console.log("Student scores:", studentScores);
-  }, [sessionDates, studentScores]);
+  // Create a debounced version of the score change handler
+  const debouncedUpdateParent = useCallback(
+    debounce((currentScores = studentScores, currentDates = sessionDates) => {
+      try {
+        const formattedScores = formatScoresForParent(
+          currentScores,
+          currentDates
+        );
+        onScoresChange(formattedScores);
+      } catch (err) {
+        console.error("Error updating parent component:", err);
+      }
+    }, 500),
+    [studentScores, sessionDates, onScoresChange]
+  );
 
   // Calculate total score for a student based on course type
   const calculateTotal = useCallback(
@@ -149,6 +134,56 @@ const LabScoreEntryComponent: React.FC<LabScoreEntryComponentProps> = ({
       return convertLabScore(average, courseType);
     },
     [courseType]
+  );
+
+  // Format scores for parent component
+  const formatScoresForParent = useCallback(
+    (
+      currentScores: { [studentId: string]: LabSession[] },
+      currentDates: string[]
+    ) => {
+      const formattedScores: { [studentId: string]: LabScore } = {};
+
+      students.forEach((student) => {
+        const studentId = student._id;
+        const sessions = currentScores[studentId] || [];
+
+        // Ensure all sessions are properly indexed
+        const completeSessionsArray = currentDates.map((date, idx) => {
+          // Try to find existing session by index
+          const existingSession = sessions.find((s) => s.index === idx);
+
+          if (existingSession) {
+            return {
+              ...existingSession,
+              date: date, // Update date to match current position
+            };
+          }
+
+          // Create new session
+          return {
+            date,
+            maxMarks: 10,
+            obtainedMarks: 0,
+            index: idx,
+          };
+        });
+
+        // Calculate total score based on course type
+        const total = calculateTotal(completeSessionsArray);
+
+        // Format for parent component
+        formattedScores[studentId] = {
+          componentName: "LAB",
+          sessions: completeSessionsArray,
+          maxMarks,
+          totalObtained: total,
+        };
+      });
+
+      return formattedScores;
+    },
+    [students, calculateTotal, maxMarks]
   );
 
   // Initialize from props
@@ -241,6 +276,7 @@ const LabScoreEntryComponent: React.FC<LabScoreEntryComponentProps> = ({
         initialStudentScores,
         defaultDates
       );
+      debouncedUpdateParent.cancel(); // Cancel any pending updates
       onScoresChange(formattedScores);
 
       console.log("Lab component initialized with dates:", defaultDates);
@@ -249,125 +285,72 @@ const LabScoreEntryComponent: React.FC<LabScoreEntryComponentProps> = ({
       console.error("Error initializing lab component:", err);
       setError("Failed to initialize lab scores");
     }
-  }, [initialScores, students, sessionDates, isInitialized, onScoresChange]);
-
-  // Format scores for parent component
-  const formatScoresForParent = useCallback(
-    (
-      currentScores: { [studentId: string]: LabSession[] },
-      currentDates: string[]
-    ) => {
-      const formattedScores: { [studentId: string]: LabScore } = {};
-
-      students.forEach((student) => {
-        const studentId = student._id;
-        const sessions = currentScores[studentId] || [];
-
-        // Ensure all sessions are properly indexed
-        const completeSessionsArray = currentDates.map((date, idx) => {
-          // Try to find existing session by index
-          const existingSession = sessions.find((s) => s.index === idx);
-
-          if (existingSession) {
-            return {
-              ...existingSession,
-              date: date, // Update date to match current position
-            };
-          }
-
-          // Create new session
-          return {
-            date,
-            maxMarks: 10,
-            obtainedMarks: 0,
-            index: idx,
-          };
-        });
-
-        // Calculate total score based on course type
-        const total = calculateTotal(completeSessionsArray);
-
-        // Format for parent component
-        formattedScores[studentId] = {
-          componentName: "LAB",
-          sessions: completeSessionsArray,
-          maxMarks,
-          totalObtained: total,
-        };
-      });
-
-      return formattedScores;
-    },
-    [students, calculateTotal, maxMarks]
-  );
+  }, [
+    initialScores,
+    students,
+    sessionDates,
+    isInitialized,
+    onScoresChange,
+    formatScoresForParent,
+    debouncedUpdateParent,
+  ]);
 
   // Update parent component with current scores
-  const updateParent = useCallback(
-    (currentScores = studentScores, currentDates = sessionDates) => {
-      try {
-        const formattedScores = formatScoresForParent(
-          currentScores,
-          currentDates
-        );
-        onScoresChange(formattedScores);
-      } catch (err) {
-        console.error("Error updating parent component:", err);
-      }
-    },
-    [studentScores, sessionDates, formatScoresForParent, onScoresChange]
-  );
+  useEffect(() => {
+    if (isInitialized) {
+      debouncedUpdateParent();
+    }
+
+    return () => {
+      debouncedUpdateParent.cancel();
+    };
+  }, [studentScores, sessionDates, debouncedUpdateParent, isInitialized]);
 
   // Handle date change
-  const handleDateChange = useCallback(
-    (index: number, newDate: string) => {
-      setSessionDates((prevDates) => {
-        const newDates = [...prevDates];
-        newDates[index] = newDate;
+  const handleDateChange = useCallback((index: number, newDate: string) => {
+    if (!newDate) return; // Skip empty dates
 
-        // Update all student sessions with the new date
-        setStudentScores((prevScores) => {
-          const updatedScores = { ...prevScores };
+    setSessionDates((prevDates) => {
+      const newDates = [...prevDates];
+      newDates[index] = newDate;
+      return newDates;
+    });
 
-          Object.keys(updatedScores).forEach((studentId) => {
-            // Create a copy of the student's sessions
-            updatedScores[studentId] = [...updatedScores[studentId]];
+    setStudentScores((prevScores) => {
+      const updatedScores = { ...prevScores };
 
-            // Find the session with this index
-            const sessionIdx = updatedScores[studentId].findIndex(
-              (s) => s.index === index
-            );
+      Object.keys(updatedScores).forEach((studentId) => {
+        // Create a copy of the student's sessions
+        updatedScores[studentId] = [...updatedScores[studentId]];
 
-            if (sessionIdx >= 0) {
-              // Update existing session
-              updatedScores[studentId][sessionIdx] = {
-                ...updatedScores[studentId][sessionIdx],
-                date: newDate,
-              };
-            } else {
-              // Create new session if not found
-              updatedScores[studentId].push({
-                date: newDate,
-                maxMarks: 10,
-                obtainedMarks: 0,
-                index: index,
-              });
+        // Find the session with this index
+        const sessionIdx = updatedScores[studentId].findIndex(
+          (s) => s.index === index
+        );
 
-              // Sort by index
-              updatedScores[studentId].sort((a, b) => a.index - b.index);
-            }
+        if (sessionIdx >= 0) {
+          // Update existing session
+          updatedScores[studentId][sessionIdx] = {
+            ...updatedScores[studentId][sessionIdx],
+            date: newDate,
+          };
+        } else {
+          // Create new session if not found
+          updatedScores[studentId].push({
+            date: newDate,
+            maxMarks: 10,
+            obtainedMarks: 0,
+            index: index,
           });
 
-          // Update parent component
-          setTimeout(() => updateParent(updatedScores, newDates), 0);
-
-          return updatedScores;
-        });
-
-        return newDates;
+          // Sort by index
+          updatedScores[studentId].sort((a, b) => a.index - b.index);
+        }
       });
-    },
-    [updateParent]
-  );
+
+      return updatedScores;
+    });
+  }, []);
 
   // Add a new session
   const handleAddSession = useCallback(() => {
@@ -392,59 +375,52 @@ const LabScoreEntryComponent: React.FC<LabScoreEntryComponentProps> = ({
           ];
         });
 
-        setTimeout(() => updateParent(updatedScores, newDates), 0);
+        return updatedScores;
+      });
+
+      return newDates;
+    });
+  }, []);
+
+  // Remove a session
+  const handleRemoveSession = useCallback((indexToRemove: number) => {
+    setSessionDates((prevDates) => {
+      if (prevDates.length <= 2) {
+        setError("You must have at least two lab sessions");
+        return prevDates;
+      }
+
+      const newDates = prevDates.filter((_, i) => i !== indexToRemove);
+
+      setStudentScores((prevScores) => {
+        const updatedScores = { ...prevScores };
+
+        Object.keys(updatedScores).forEach((studentId) => {
+          // Remove session with specified index
+          updatedScores[studentId] = updatedScores[studentId]
+            .filter((session) => session.index !== indexToRemove)
+            // Update indices of remaining sessions
+            .map((session) => {
+              if (session.index > indexToRemove) {
+                return { ...session, index: session.index - 1 };
+              }
+              return session;
+            });
+        });
 
         return updatedScores;
       });
 
       return newDates;
     });
-  }, [updateParent]);
-
-  // Remove a session
-  const handleRemoveSession = useCallback(
-    (indexToRemove: number) => {
-      setSessionDates((prevDates) => {
-        if (prevDates.length <= 2) {
-          setError("You must have at least two lab sessions");
-          return prevDates;
-        }
-
-        const newDates = prevDates.filter((_, i) => i !== indexToRemove);
-
-        setStudentScores((prevScores) => {
-          const updatedScores = { ...prevScores };
-
-          Object.keys(updatedScores).forEach((studentId) => {
-            // Remove session with specified index
-            updatedScores[studentId] = updatedScores[studentId]
-              .filter((session) => session.index !== indexToRemove)
-              // Update indices of remaining sessions
-              .map((session) => {
-                if (session.index > indexToRemove) {
-                  return { ...session, index: session.index - 1 };
-                }
-                return session;
-              });
-          });
-
-          setTimeout(() => updateParent(updatedScores, newDates), 0);
-
-          return updatedScores;
-        });
-
-        return newDates;
-      });
-    },
-    [updateParent]
-  );
+  }, []);
 
   // Handle score change
   const handleScoreChange = useCallback(
     (studentId: string, sessionIndex: number, value: string) => {
       try {
         // Convert to number and validate
-        let numValue = parseInt(value);
+        let numValue = parseFloat(value);
         if (isNaN(numValue)) numValue = 0;
         numValue = Math.max(0, Math.min(10, numValue));
 
@@ -491,16 +467,13 @@ const LabScoreEntryComponent: React.FC<LabScoreEntryComponentProps> = ({
             updatedScores[studentId].sort((a, b) => a.index - b.index);
           }
 
-          // Update parent with a slight delay to avoid excessive updates
-          setTimeout(() => updateParent(updatedScores, sessionDates), 0);
-
           return updatedScores;
         });
       } catch (err) {
         console.error("Error updating score:", err);
       }
     },
-    [sessionDates, updateParent]
+    [sessionDates]
   );
 
   return (
@@ -614,6 +587,7 @@ const LabScoreEntryComponent: React.FC<LabScoreEntryComponentProps> = ({
                           inputProps={{
                             min: 0,
                             max: 10,
+                            step: 0.5,
                             style: { textAlign: "center" },
                           }}
                           size="small"

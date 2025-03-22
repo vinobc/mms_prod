@@ -39,6 +39,7 @@ export interface ExtendedScoreInput {
     componentName: string;
     maxMarks: number;
     obtainedMarks: number;
+    testDate?: string;
   }[];
   questions?: QuestionInput[];
   lab_sessions?: LabSessionInput[]; // Add this property
@@ -63,6 +64,7 @@ export interface ScoreInput {
     componentName: string;
     maxMarks: number;
     obtainedMarks: number;
+    testDate?: string;
   }[];
   questions?: QuestionInput[];
 }
