@@ -6,9 +6,12 @@ import {
 } from "react-router-dom";
 import { ThemeProvider, CssBaseline } from "@mui/material";
 import { createTheme } from "@mui/material/styles";
+import { LocalizationProvider } from "@mui/x-date-pickers";
+import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
 import MainLayout from "./components/layout/MainLayout";
 import CoursesPage from "./pages/CoursesPage";
 import ScoresPage from "./pages/ScoresPage";
+import AttendancePage from "./pages/AttendancePage"; // Import the new page
 import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
 import ProfilePage from "./pages/ProfilePage";
@@ -35,45 +38,55 @@ function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <AuthProvider>
-        <Router>
-          <MainLayout>
-            <Routes>
-              {/* Public Routes */}
-              <Route path="/login" element={<LoginPage />} />
+      <LocalizationProvider dateAdapter={AdapterDateFns}>
+        <AuthProvider>
+          <Router>
+            <MainLayout>
+              <Routes>
+                {/* Public Routes */}
+                <Route path="/login" element={<LoginPage />} />
 
-              {/* Protected Routes */}
-              <Route element={<ProtectedRoute />}>
-                <Route path="/dashboard" element={<DashboardPage />} />
-                <Route path="/courses" element={<CoursesPage />} />
-                <Route path="/scores" element={<ScoresPage />} />
-                <Route path="/profile" element={<ProfilePage />} />
-              </Route>
+                {/* Protected Routes */}
+                <Route element={<ProtectedRoute />}>
+                  <Route path="/dashboard" element={<DashboardPage />} />
+                  <Route path="/courses" element={<CoursesPage />} />
+                  <Route path="/scores" element={<ScoresPage />} />
+                  <Route path="/attendance" element={<AttendancePage />} />{" "}
+                  {/* New route for attendance */}
+                  <Route path="/profile" element={<ProfilePage />} />
+                </Route>
 
-              {/* Admin Routes */}
-              <Route element={<ProtectedRoute adminOnly={true} />}>
+                {/* Admin Routes */}
+                <Route element={<ProtectedRoute adminOnly={true} />}>
+                  <Route
+                    path="/admin/faculty"
+                    element={<FacultyManagementPage />}
+                  />
+                  <Route
+                    path="/admin/settings"
+                    element={<SystemSettingsPage />}
+                  />
+                  {/* Add the new route for student management */}
+                  <Route
+                    path="/admin/students"
+                    element={<GlobalStudentManagement />}
+                  />
+                </Route>
+
+                {/* Redirects */}
                 <Route
-                  path="/admin/faculty"
-                  element={<FacultyManagementPage />}
+                  path="/"
+                  element={<Navigate to="/dashboard" replace />}
                 />
                 <Route
-                  path="/admin/settings"
-                  element={<SystemSettingsPage />}
+                  path="*"
+                  element={<Navigate to="/dashboard" replace />}
                 />
-                {/* Add the new route for student management */}
-                <Route
-                  path="/admin/students"
-                  element={<GlobalStudentManagement />}
-                />
-              </Route>
-
-              {/* Redirects */}
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="*" element={<Navigate to="/dashboard" replace />} />
-            </Routes>
-          </MainLayout>
-        </Router>
-      </AuthProvider>
+              </Routes>
+            </MainLayout>
+          </Router>
+        </AuthProvider>
+      </LocalizationProvider>
     </ThemeProvider>
   );
 }

@@ -26,11 +26,12 @@ import {
   AccountCircle as AccountCircleIcon,
   Logout as LogoutIcon,
   Settings as SettingsIcon,
-  Group as GroupIcon, // Added for Student Database
+  Group as GroupIcon,
+  EventNote as EventNoteIcon, // Added for Attendance
 } from "@mui/icons-material";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
-import amityLogo from "../../assets/amity_logo.png"; // Import the logo
+import amityLogo from "../../assets/amity_logo.png";
 
 const drawerWidth = 240;
 
@@ -92,6 +93,13 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
       path: "/scores",
       requireAuth: true,
     },
+    // Add new menu item for Attendance
+    {
+      text: "Attendance",
+      icon: <EventNoteIcon />,
+      path: "/attendance",
+      requireAuth: true,
+    },
   ];
 
   // Admin-only menu items
@@ -103,7 +111,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
       adminOnly: true,
     },
     {
-      text: "Student Database", // New entry for Student Database
+      text: "Student Database",
       icon: <GroupIcon />,
       path: "/admin/students",
       adminOnly: true,

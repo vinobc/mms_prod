@@ -8,6 +8,7 @@ import scoreRoutes from "./routes/scoreRoutes";
 import authRoutes from "./routes/authRoutes";
 import facultyRoutes from "./routes/facultyRoutes";
 import systemSettingRoutes from "./routes/systemSettingRoutes";
+import attendanceRoutes from "./routes/attendanceRoutes"; // Add this import
 import { initializeSystemSettings } from "./controllers/systemSettingController";
 
 // Load environment variables
@@ -18,8 +19,8 @@ const port = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 app.use("/api/settings", systemSettingRoutes);
 
 // Database connection
@@ -42,6 +43,7 @@ app.use("/api/students", studentRoutes);
 app.use("/api/scores", scoreRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/faculty", facultyRoutes);
+app.use("/api/attendance", attendanceRoutes); // Add this route
 
 // Basic route
 app.get("/", (req: Request, res: Response) => {
