@@ -21,7 +21,11 @@ import {
   Card,
   CardContent,
   CardActions,
+  Chip, // Add Chip import
 } from "@mui/material";
+import {
+  AccessTime as AccessTimeIcon, // Add AccessTimeIcon import
+} from "@mui/icons-material";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
@@ -32,6 +36,8 @@ import { courseService } from "../services/courseService";
 import { attendanceService } from "../services/attendanceService";
 import { Course } from "../types";
 import { facultyService } from "../services/facultyService";
+
+// Rest of the component code remains the same
 
 const AttendancePage: React.FC = () => {
   const location = useLocation();
@@ -90,6 +96,15 @@ const AttendancePage: React.FC = () => {
       // Check if course type is integrated to set default component
       if (courseData.type.includes("Integrated")) {
         setComponent("theory");
+      } else if (
+        courseData.type === "UG-Lab-Only" ||
+        courseData.type === "PG-Lab-Only"
+      ) {
+        // For lab-only courses, automatically set component to lab
+        setComponent("lab");
+      } else {
+        // For other courses, keep component empty
+        setComponent("");
       }
 
       // Fetch attendance data
@@ -168,7 +183,7 @@ const AttendancePage: React.FC = () => {
   };
 
   // Take attendance
-  const handleSaveAttendance = async (attendanceRecords: any[]) => {
+  const handleSaveAttendance = async (attendanceData: any) => {
     if (!course || !attendanceDate) {
       setError("Course and date are required");
       return;
@@ -185,8 +200,11 @@ const AttendancePage: React.FC = () => {
     try {
       setLoading(true);
 
+      // Extract the student records and time data
+      const { students, startTime, endTime } = attendanceData;
+
       // Format data for API
-      const formattedData = attendanceRecords.map((record) => ({
+      const formattedData = students.map((record: any) => ({
         studentId: record.studentId,
         status: record.status || "absent",
         remarks: record.remarks,
@@ -196,13 +214,16 @@ const AttendancePage: React.FC = () => {
       const academicYear =
         localStorage.getItem(`courseAcademicYear_${course._id}`) || "2023-24";
 
-      // Save attendance
+      // Save attendance with time slot information
       await attendanceService.takeAttendance(
         course._id,
         attendanceDate,
         formattedData,
         component || undefined,
-        academicYear
+        academicYear,
+        undefined, // No global remarks
+        startTime,
+        endTime
       );
 
       setSuccess("Attendance saved successfully");
@@ -217,15 +238,30 @@ const AttendancePage: React.FC = () => {
     }
   };
 
-  // Delete attendance for a date
-  const handleDeleteAttendance = async (date: Date) => {
+  // Delete attendance for a date and time slot
+  const handleDeleteAttendance = async (sessionData: any) => {
     if (!course) return;
 
-    if (
-      !window.confirm(
-        `Are you sure you want to delete attendance for ${date.toLocaleDateString()}?`
-      )
-    ) {
+    const { date, timeSlot } = sessionData;
+    let startTime = undefined;
+    let endTime = undefined;
+
+    // Parse time slot if provided
+    if (timeSlot && timeSlot !== "unknown") {
+      const [start, end] = timeSlot.split("-");
+      startTime = start.trim();
+      endTime = end.trim();
+    }
+
+    const confirmMessage = timeSlot
+      ? `Are you sure you want to delete attendance for ${new Date(
+          date
+        ).toLocaleDateString()} (${timeSlot})?`
+      : `Are you sure you want to delete all attendance records for ${new Date(
+          date
+        ).toLocaleDateString()}?`;
+
+    if (!window.confirm(confirmMessage)) {
       return;
     }
 
@@ -233,8 +269,10 @@ const AttendancePage: React.FC = () => {
       setLoading(true);
       await attendanceService.deleteAttendance(
         course._id,
-        date,
-        component || undefined
+        new Date(date),
+        component || undefined,
+        startTime,
+        endTime
       );
       setSuccess("Attendance deleted successfully");
 
@@ -388,7 +426,22 @@ const AttendancePage: React.FC = () => {
             </FormControl>
             <Typography variant="caption" sx={{ display: "block", mt: 1 }}>
               This is an integrated course. Please select whether you want to
-              manage theory or lab attendance.
+              manage theory or lab attendance. Time slots will adjust
+              accordingly.
+            </Typography>
+          </Box>
+        )}
+        {(course.type === "UG-Lab-Only" || course.type === "PG-Lab-Only") && (
+          <Box mt={2} mb={3}>
+            <Chip
+              label="Lab Course"
+              color="primary"
+              variant="outlined"
+              icon={<AccessTimeIcon />}
+            />
+            <Typography variant="caption" sx={{ display: "block", mt: 1 }}>
+              This is a lab-only course. Lab time slots are available for
+              attendance.
             </Typography>
           </Box>
         )}

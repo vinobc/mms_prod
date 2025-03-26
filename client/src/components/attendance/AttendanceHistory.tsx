@@ -30,6 +30,7 @@ import {
   FormatListBulleted as FormatListBulletedIcon,
   CalendarMonth as CalendarMonthIcon,
   Refresh as RefreshIcon,
+  AccessTime as AccessTimeIcon,
 } from "@mui/icons-material";
 
 interface AttendanceHistoryProps {
@@ -37,7 +38,7 @@ interface AttendanceHistoryProps {
   component?: "theory" | "lab";
   attendanceData: any[];
   attendanceSummary: any;
-  onDelete: (date: Date) => void;
+  onDelete: (sessionData: any) => void;
   onRefresh: () => void;
 }
 
@@ -76,7 +77,18 @@ const AttendanceDetailsDialog: React.FC<AttendanceDetailsDialogProps> = ({
   // Get absent dates
   const absentDates = filteredRecords
     .filter((record) => record.status === "absent")
-    .map((record) => new Date(record.date));
+    .map((record) => {
+      const timeInfo =
+        record.startTime && record.endTime
+          ? `${record.startTime} - ${record.endTime}`
+          : undefined;
+
+      return {
+        date: new Date(record.date),
+        timeSlot: timeInfo,
+        component: record.component,
+      };
+    });
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
@@ -134,10 +146,12 @@ const AttendanceDetailsDialog: React.FC<AttendanceDetailsDialogProps> = ({
                 <strong>Absent Dates ({absentDates.length})</strong>
               </Typography>
               <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
-                {absentDates.map((date, index) => (
+                {absentDates.map((absentInfo, index) => (
                   <Chip
                     key={index}
-                    label={date.toLocaleDateString()}
+                    label={`${absentInfo.date.toLocaleDateString()} ${
+                      absentInfo.timeSlot ? `(${absentInfo.timeSlot})` : ""
+                    }`}
                     color="error"
                     variant="outlined"
                     size="small"
@@ -162,6 +176,7 @@ const AttendanceDetailsDialog: React.FC<AttendanceDetailsDialogProps> = ({
               <TableHead>
                 <TableRow>
                   <TableCell>Date</TableCell>
+                  <TableCell>Time Slot</TableCell>
                   <TableCell>Status</TableCell>
                   <TableCell>Component</TableCell>
                   <TableCell>Remarks</TableCell>
@@ -180,6 +195,11 @@ const AttendanceDetailsDialog: React.FC<AttendanceDetailsDialogProps> = ({
                   >
                     <TableCell>
                       {new Date(record.date).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell>
+                      {record.startTime && record.endTime
+                        ? `${record.startTime} - ${record.endTime}`
+                        : "-"}
                     </TableCell>
                     <TableCell>
                       <Chip
@@ -239,9 +259,9 @@ const AttendanceHistory: React.FC<AttendanceHistoryProps> = ({
     setDetailsOpen(false);
   };
 
-  // Handle delete attendance for a date
-  const handleDeleteAttendance = (dateString: string) => {
-    onDelete(new Date(dateString));
+  // Handle delete attendance for a date and time slot
+  const handleDeleteAttendance = (sessionData: any) => {
+    onDelete(sessionData);
   };
 
   if (!attendanceData || attendanceData.length === 0) {
@@ -265,6 +285,9 @@ const AttendanceHistory: React.FC<AttendanceHistoryProps> = ({
   if (!attendanceSummary) {
     return <CircularProgress />;
   }
+
+  // Ensure attendanceSessions is available and is an array
+  const attendanceSessions = attendanceSummary.attendanceSessions || [];
 
   return (
     <Box>
@@ -400,52 +423,86 @@ const AttendanceHistory: React.FC<AttendanceHistoryProps> = ({
           </Table>
         </TableContainer>
       ) : (
-        // Date-wise attendance view
+        // Date-wise attendance view with time slots - with defensive checks
         <TableContainer component={Paper}>
           <Table size="small">
             <TableHead>
               <TableRow sx={{ backgroundColor: "#f5f5f5" }}>
                 <TableCell>S.No.</TableCell>
                 <TableCell>Date</TableCell>
+                <TableCell>Time Slot</TableCell>
                 <TableCell>Components</TableCell>
                 <TableCell>Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {attendanceSummary.attendanceDates.map(
-                (dateInfo: any, index: number) => (
-                  <TableRow key={dateInfo.date}>
+              {Array.isArray(attendanceSessions) ? (
+                attendanceSessions.map((sessionInfo: any, index: number) => (
+                  <TableRow
+                    key={`${sessionInfo.date}_${
+                      sessionInfo.timeSlot || "default"
+                    }_${index}`}
+                  >
                     <TableCell>{index + 1}</TableCell>
                     <TableCell>
-                      {new Date(dateInfo.date).toLocaleDateString()}
+                      {new Date(sessionInfo.date).toLocaleDateString()}
                     </TableCell>
                     <TableCell>
-                      {dateInfo.components.map((comp: string) => (
+                      {sessionInfo.timeSlot ? (
                         <Chip
-                          key={comp}
-                          label={
-                            comp === "default"
-                              ? "Regular"
-                              : comp.charAt(0).toUpperCase() + comp.slice(1)
-                          }
+                          icon={<AccessTimeIcon />}
+                          label={sessionInfo.timeSlot}
+                          color="primary"
                           size="small"
-                          sx={{ mr: 0.5 }}
+                          variant="outlined"
                         />
-                      ))}
+                      ) : (
+                        <Typography variant="body2" color="textSecondary">
+                          No time specified
+                        </Typography>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {Array.isArray(sessionInfo.components) ? (
+                        sessionInfo.components.map((comp: string) => (
+                          <Chip
+                            key={comp}
+                            label={
+                              comp === "default"
+                                ? "Regular"
+                                : comp.charAt(0).toUpperCase() + comp.slice(1)
+                            }
+                            size="small"
+                            sx={{ mr: 0.5 }}
+                          />
+                        ))
+                      ) : (
+                        <Typography variant="body2" color="textSecondary">
+                          -
+                        </Typography>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Tooltip title="Delete Attendance Record">
                         <IconButton
                           size="small"
                           color="error"
-                          onClick={() => handleDeleteAttendance(dateInfo.date)}
+                          onClick={() => handleDeleteAttendance(sessionInfo)}
                         >
                           <DeleteIcon />
                         </IconButton>
                       </Tooltip>
                     </TableCell>
                   </TableRow>
-                )
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={5}>
+                    <Alert severity="info">
+                      No attendance sessions data available
+                    </Alert>
+                  </TableCell>
+                </TableRow>
               )}
             </TableBody>
           </Table>

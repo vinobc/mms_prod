@@ -1,4 +1,3 @@
-// client/src/components/attendance/AttendanceTable.tsx
 import React, { useState, useEffect } from "react";
 import {
   Paper,
@@ -20,15 +19,51 @@ import {
   Chip,
   CircularProgress,
   Alert,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  SelectChangeEvent,
+  Grid,
+  InputAdornment,
 } from "@mui/material";
 import {
   Save as SaveIcon,
   Person as PersonIcon,
   PersonOutline as PersonOutlineIcon,
   Comment as CommentIcon,
+  Schedule as ScheduleIcon,
+  Add as AddIcon,
 } from "@mui/icons-material";
+import { TimePicker } from "@mui/x-date-pickers/TimePicker";
+import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
+import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
 import { studentService } from "../../services/studentService";
 import { CourseType } from "../../types";
+import { format, parse } from "date-fns";
+
+// client/src/components/attendance/AttendanceTable.tsx
+
+// Import statements remain the same
+
+// Predefined time slots for theory and lab sessions
+const THEORY_TIME_SLOTS = [
+  { label: "9:00 - 9.50", startTime: "09:00", endTime: "09:50" },
+  { label: "9:55 - 10.45", startTime: "09:55", endTime: "10:45" },
+  { label: "10:50 - 11.40", startTime: "10:50", endTime: "11:40" },
+  { label: "11:45 - 12.35", startTime: "11:45", endTime: "12:35" },
+  { label: "1:15 - 2.05", startTime: "13:15", endTime: "14:05" },
+  { label: "2:10 - 3.00", startTime: "14:10", endTime: "15:00" },
+  { label: "3:05 - 3.55", startTime: "15:05", endTime: "15:55" },
+  { label: "4:00 - 4.50", startTime: "16:00", endTime: "16:50" },
+];
+
+const LAB_TIME_SLOTS = [
+  { label: "9:00 AM - 10:40 AM", startTime: "09:00", endTime: "10:40" },
+  { label: "10:50 AM - 12:30 PM", startTime: "10:50", endTime: "12:30" },
+  { label: "1:15 PM - 2:55 PM", startTime: "13:15", endTime: "14:55" },
+  { label: "3:05 PM - 4:45 PM", startTime: "15:05", endTime: "16:45" },
+];
 
 interface AttendanceTableProps {
   courseId: string;
@@ -37,18 +72,6 @@ interface AttendanceTableProps {
   loading?: boolean;
   onSave: (attendanceRecords: any[]) => void;
   courseType: CourseType;
-}
-
-interface StudentAttendanceRecord {
-  studentId: string;
-  registrationNumber: string;
-  name: string;
-  program: string;
-  status: "present" | "absent";
-  attendancePercentage?: number;
-  belowThreshold?: boolean;
-  remarks?: string;
-  isEditing?: boolean;
 }
 
 const AttendanceTable: React.FC<AttendanceTableProps> = ({
@@ -65,12 +88,69 @@ const AttendanceTable: React.FC<AttendanceTableProps> = ({
   const [allStatus, setAllStatus] = useState<"present" | "absent" | "">("");
   const [remarks, setRemarks] = useState<string>("");
 
+  // New state for time slots
+  const [startTime, setStartTime] = useState<string>("");
+  const [endTime, setEndTime] = useState<string>("");
+  const [selectedTimeSlot, setSelectedTimeSlot] = useState<string>("custom");
+  const [showCustomTime, setShowCustomTime] = useState<boolean>(false);
+  const [startTimeObj, setStartTimeObj] = useState<Date | null>(null);
+  const [endTimeObj, setEndTimeObj] = useState<Date | null>(null);
+
+  // Get appropriate time slots based on component
+  const getTimeSlots = () => {
+    // For lab-only courses, always show lab time slots regardless of component
+    if (courseType === "UG-Lab-Only" || courseType === "PG-Lab-Only") {
+      return LAB_TIME_SLOTS;
+    }
+    // For integrated courses, show time slots based on component
+    if (component === "lab") {
+      return LAB_TIME_SLOTS;
+    }
+    // Default to theory time slots
+    return THEORY_TIME_SLOTS;
+  };
+
   // Fetch students when component mounts or courseId changes
   useEffect(() => {
     if (courseId) {
       fetchStudents();
     }
   }, [courseId]);
+
+  // Reset time slot when component changes
+  useEffect(() => {
+    setSelectedTimeSlot("custom");
+    setStartTime("");
+    setEndTime("");
+    setStartTimeObj(null);
+    setEndTimeObj(null);
+    setShowCustomTime(true);
+  }, [component]);
+
+  // Set time slot based on selection
+  useEffect(() => {
+    if (selectedTimeSlot !== "custom") {
+      const timeSlots = getTimeSlots();
+      const slot = timeSlots.find(
+        (slot) => `${slot.startTime}-${slot.endTime}` === selectedTimeSlot
+      );
+      if (slot) {
+        setStartTime(slot.startTime);
+        setEndTime(slot.endTime);
+        setShowCustomTime(false);
+
+        // Set Date objects for the TimePicker
+        if (slot.startTime) {
+          setStartTimeObj(parse(slot.startTime, "HH:mm", new Date()));
+        }
+        if (slot.endTime) {
+          setEndTimeObj(parse(slot.endTime, "HH:mm", new Date()));
+        }
+      }
+    } else {
+      setShowCustomTime(true);
+    }
+  }, [selectedTimeSlot, component]);
 
   // Fetch students for this course
   const fetchStudents = async () => {
@@ -100,6 +180,30 @@ const AttendanceTable: React.FC<AttendanceTableProps> = ({
       setError(error.message || "Failed to load students");
     } finally {
       setLoadingStudents(false);
+    }
+  };
+
+  // Handle time slot selection
+  const handleTimeSlotChange = (event: SelectChangeEvent) => {
+    setSelectedTimeSlot(event.target.value);
+  };
+
+  // Handle custom time changes
+  const handleStartTimeChange = (newTime: Date | null) => {
+    setStartTimeObj(newTime);
+    if (newTime) {
+      setStartTime(format(newTime, "HH:mm"));
+    } else {
+      setStartTime("");
+    }
+  };
+
+  const handleEndTimeChange = (newTime: Date | null) => {
+    setEndTimeObj(newTime);
+    if (newTime) {
+      setEndTime(format(newTime, "HH:mm"));
+    } else {
+      setEndTime("");
     }
   };
 
@@ -169,8 +273,18 @@ const AttendanceTable: React.FC<AttendanceTableProps> = ({
       return;
     }
 
-    // Call the parent save handler
-    onSave(students);
+    // Validate time slots
+    if (!startTime || !endTime) {
+      setError("Please select a time slot or enter custom start and end times");
+      return;
+    }
+
+    // Call the parent save handler with time information
+    onSave({
+      students,
+      startTime,
+      endTime,
+    });
   };
 
   // Calculate status counts
@@ -189,6 +303,9 @@ const AttendanceTable: React.FC<AttendanceTableProps> = ({
     return <Alert severity="info">No students found for this course.</Alert>;
   }
 
+  // Get appropriate time slots based on the current component
+  const timeSlots = getTimeSlots();
+
   return (
     <Box>
       <Box sx={{ mb: 3 }}>
@@ -204,6 +321,69 @@ const AttendanceTable: React.FC<AttendanceTableProps> = ({
             Date: {date.toLocaleDateString()}
           </Typography>
         )}
+
+        {/* Time Slot Selection */}
+        <Box sx={{ mt: 2, mb: 3 }}>
+          <Grid container spacing={2} alignItems="center">
+            <Grid item xs={12} md={4}>
+              <FormControl fullWidth>
+                <InputLabel id="time-slot-label">Time Slot</InputLabel>
+                <Select
+                  labelId="time-slot-label"
+                  value={selectedTimeSlot}
+                  onChange={handleTimeSlotChange}
+                  label="Time Slot"
+                  startAdornment={
+                    <InputAdornment position="start">
+                      <ScheduleIcon />
+                    </InputAdornment>
+                  }
+                >
+                  {timeSlots.map((slot) => (
+                    <MenuItem
+                      key={`${slot.startTime}-${slot.endTime}`}
+                      value={`${slot.startTime}-${slot.endTime}`}
+                    >
+                      {slot.label}
+                    </MenuItem>
+                  ))}
+                  <MenuItem value="custom">Custom Time</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+
+            {showCustomTime && (
+              <LocalizationProvider dateAdapter={AdapterDateFns}>
+                <Grid item xs={12} md={4}>
+                  <TimePicker
+                    label="Start Time"
+                    value={startTimeObj}
+                    onChange={handleStartTimeChange}
+                    ampm={false}
+                    slotProps={{ textField: { fullWidth: true } }}
+                  />
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <TimePicker
+                    label="End Time"
+                    value={endTimeObj}
+                    onChange={handleEndTimeChange}
+                    ampm={false}
+                    slotProps={{ textField: { fullWidth: true } }}
+                  />
+                </Grid>
+              </LocalizationProvider>
+            )}
+
+            {!showCustomTime && (
+              <Grid item xs={12} md={8}>
+                <Typography variant="body2" color="textSecondary">
+                  Selected time slot: {startTime} - {endTime}
+                </Typography>
+              </Grid>
+            )}
+          </Grid>
+        </Box>
 
         <Box sx={{ display: "flex", mt: 2, gap: 2, alignItems: "center" }}>
           <Button
@@ -253,6 +433,12 @@ const AttendanceTable: React.FC<AttendanceTableProps> = ({
             icon={<PersonOutlineIcon />}
             label={`Absent: ${absentCount}`}
             color="error"
+            variant="outlined"
+          />
+          <Chip
+            icon={<ScheduleIcon />}
+            label={`Time: ${startTime} - ${endTime}`}
+            color="primary"
             variant="outlined"
           />
         </Box>
@@ -333,7 +519,7 @@ const AttendanceTable: React.FC<AttendanceTableProps> = ({
           color="primary"
           startIcon={loading ? <CircularProgress size={24} /> : <SaveIcon />}
           onClick={handleSaveAttendance}
-          disabled={loading}
+          disabled={loading || !startTime || !endTime}
         >
           Save Attendance
         </Button>
