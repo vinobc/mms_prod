@@ -1,3 +1,4 @@
+
 // server/src/controllers/attendanceController.ts
 import { Request, Response } from "express";
 import Attendance, {
@@ -13,7 +14,7 @@ export const attendanceController = {
   getAttendanceByCourse: async (req: Request, res: Response): Promise<void> => {
     try {
       const { courseId } = req.params;
-      const { component, startDate, endDate, academicYear } = req.query;
+      const { component, startDate, endDate } = req.query;
 
       if (!mongoose.Types.ObjectId.isValid(courseId)) {
         res.status(400).json({ message: "Invalid course ID format" });
@@ -40,47 +41,35 @@ export const attendanceController = {
       // Build query
       const query: any = { courseId };
 
-      // Add academic year filter if provided
-      if (academicYear) {
-        query.academicYear = academicYear;
-      }
-
       // Fetch attendance records
       const attendanceRecords = await Attendance.find(query)
         .populate("studentId", "registrationNumber name program")
         .sort({ "studentId.registrationNumber": 1 });
 
-      // Group by studentId to handle multiple enrollments
-      const studentMap = new Map();
+      // Calculate attendance percentages
+      const processedRecords = attendanceRecords.map((record) => {
+        const filteredRecords = record.records.filter((r) => {
+          // Filter by component if specified
+          if (component && r.component !== component) return false;
 
-      // Process each attendance record
-      attendanceRecords.forEach((record) => {
-        const studentId = record.studentId?._id?.toString();
-        if (!studentId) return;
+          // For integrated courses, always filter by component
+          if (isIntegratedCourse && !r.component) return false;
+          if (isIntegratedCourse && component && r.component !== component)
+            return false;
 
-        const filteredRecords = record.records.filter(
-          (r: IAttendanceRecord) => {
-            // Filter by component if specified
-            if (component && r.component !== component) return false;
+          // Filter by date range if specified
+          if (startDate && new Date(r.date) < new Date(startDate as string))
+            return false;
+          if (endDate && new Date(r.date) > new Date(endDate as string))
+            return false;
 
-            // For integrated courses, always filter by component
-            if (isIntegratedCourse && !r.component) return false;
-            if (isIntegratedCourse && component && r.component !== component)
-              return false;
-
-            // Filter by date range if specified
-            if (startDate && new Date(r.date) < new Date(startDate as string))
-              return false;
-            if (endDate && new Date(r.date) > new Date(endDate as string))
-              return false;
-
-            return true;
-          }
-        );
+          return true;
+        });
 
         // Group records by date to count unique class sessions
+        // A unique session is defined by a unique combination of date, startTime, endTime and component
         const uniqueSessions = new Set();
-        filteredRecords.forEach((record: IAttendanceRecord) => {
+        filteredRecords.forEach((record) => {
           const sessionKey = `${record.date.toISOString().split("T")[0]}_${
             record.startTime || ""
           }${record.endTime || ""}_${record.component || "default"}`;
@@ -92,8 +81,8 @@ export const attendanceController = {
         // Calculate present sessions
         const presentSessions = new Set();
         filteredRecords
-          .filter((r: IAttendanceRecord) => r.status === "present")
-          .forEach((record: IAttendanceRecord) => {
+          .filter((r) => r.status === "present")
+          .forEach((record) => {
             const sessionKey = `${record.date.toISOString().split("T")[0]}_${
               record.startTime || ""
             }${record.endTime || ""}_${record.component || "default"}`;
@@ -105,7 +94,7 @@ export const attendanceController = {
           ? (presentClasses / totalClasses) * 100
           : 0;
 
-        const studentData = {
+        return {
           studentId: record.studentId,
           attendancePercentage: Math.round(attendancePercentage * 100) / 100,
           belowThreshold: attendancePercentage < 75,
@@ -113,52 +102,7 @@ export const attendanceController = {
           totalClasses,
           presentClasses,
         };
-
-        // If student already exists in map, merge records
-        if (studentMap.has(studentId)) {
-          const existingData = studentMap.get(studentId);
-
-          // Merge records from both enrollments
-          existingData.records = [...existingData.records, ...filteredRecords];
-
-          // Recalculate sessions using all records
-          const allSessions = new Set();
-          existingData.records.forEach((r: IAttendanceRecord) => {
-            const sessionKey = `${r.date.toISOString().split("T")[0]}_${
-              r.startTime || ""
-            }${r.endTime || ""}_${r.component || "default"}`;
-            allSessions.add(sessionKey);
-          });
-
-          // Recalculate present sessions
-          const allPresentSessions = new Set();
-          existingData.records
-            .filter((r: IAttendanceRecord) => r.status === "present")
-            .forEach((r: IAttendanceRecord) => {
-              const sessionKey = `${r.date.toISOString().split("T")[0]}_${
-                r.startTime || ""
-              }${r.endTime || ""}_${r.component || "default"}`;
-              allPresentSessions.add(sessionKey);
-            });
-
-          // Update calculations
-          existingData.totalClasses = allSessions.size;
-          existingData.presentClasses = allPresentSessions.size;
-          existingData.attendancePercentage = existingData.totalClasses
-            ? (existingData.presentClasses / existingData.totalClasses) * 100
-            : 0;
-          existingData.belowThreshold = existingData.attendancePercentage < 75;
-
-          // Store updated data
-          studentMap.set(studentId, existingData);
-        } else {
-          // First time seeing this student
-          studentMap.set(studentId, studentData);
-        }
       });
-
-      // Convert map to array for response
-      const processedRecords = Array.from(studentMap.values());
 
       res.json(processedRecords);
     } catch (error) {
@@ -170,10 +114,13 @@ export const attendanceController = {
   },
 
   // Get attendance summary for a course
+  // server/src/controllers/attendanceController.ts (getAttendanceSummary method)
+
+  // Get attendance summary for a course
   getAttendanceSummary: async (req: Request, res: Response): Promise<void> => {
     try {
       const { courseId } = req.params;
-      const { component, academicYear } = req.query;
+      const { component } = req.query;
 
       if (!mongoose.Types.ObjectId.isValid(courseId)) {
         res.status(400).json({ message: "Invalid course ID format" });
@@ -197,33 +144,17 @@ export const attendanceController = {
         return;
       }
 
-      // Build query
-      const query: any = { courseId };
-
-      // Add academic year filter if provided
-      if (academicYear) {
-        query.academicYear = academicYear;
-      }
-
       // Fetch all attendance records for this course
-      const attendanceRecords = await Attendance.find(query).populate(
+      const attendanceRecords = await Attendance.find({ courseId }).populate(
         "studentId",
         "registrationNumber name program"
       );
-
-      // Get unique students by ID
-      const uniqueStudentIds = new Set();
-      attendanceRecords.forEach((record) => {
-        if (record.studentId && record.studentId._id) {
-          uniqueStudentIds.add(record.studentId._id.toString());
-        }
-      });
 
       // Get unique dates and time slots on which attendance was taken
       const sessionsMap = new Map<string, Set<string>>();
 
       attendanceRecords.forEach((record) => {
-        record.records.forEach((r: IAttendanceRecord) => {
+        record.records.forEach((r) => {
           // Skip if component filter is active and doesn't match
           if (component && r.component !== component) return;
 
@@ -272,19 +203,18 @@ export const attendanceController = {
           return 0;
         });
 
-      // Group by student to calculate attendance statistics properly
-      const studentAttendanceMap = new Map();
+      // Calculate overall stats
+      const totalStudents = attendanceRecords.length;
+      let belowThresholdCount = 0;
+      let totalAttendancePercentage = 0;
 
       attendanceRecords.forEach((record) => {
-        const studentId = record.studentId?._id?.toString();
-        if (!studentId) return;
-
         // Group records by unique sessions to count properly
         const uniqueSessions = new Set();
         const presentSessions = new Set();
 
         record.records
-          .filter((r: IAttendanceRecord) => {
+          .filter((r) => {
             // Apply filters
             if (component && r.component !== component) return false;
             if (isIntegratedCourse && !r.component) return false;
@@ -292,7 +222,7 @@ export const attendanceController = {
               return false;
             return true;
           })
-          .forEach((r: IAttendanceRecord) => {
+          .forEach((r) => {
             // Create a unique session key
             const sessionKey = `${r.date.toISOString().split("T")[0]}_${
               r.startTime || ""
@@ -304,37 +234,8 @@ export const attendanceController = {
             }
           });
 
-        // If student already exists in map, merge session data
-        if (studentAttendanceMap.has(studentId)) {
-          const existingData = studentAttendanceMap.get(studentId);
-
-          // Add all sessions to the sets
-          uniqueSessions.forEach((session) =>
-            existingData.uniqueSessions.add(session)
-          );
-          presentSessions.forEach((session) =>
-            existingData.presentSessions.add(session)
-          );
-
-          studentAttendanceMap.set(studentId, existingData);
-        } else {
-          // First time seeing this student
-          studentAttendanceMap.set(studentId, {
-            uniqueSessions,
-            presentSessions,
-            student: record.studentId,
-          });
-        }
-      });
-
-      // Calculate overall stats
-      const totalStudents = uniqueStudentIds.size;
-      let belowThresholdCount = 0;
-      let totalAttendancePercentage = 0;
-
-      studentAttendanceMap.forEach((data) => {
-        const total = data.uniqueSessions.size;
-        const present = data.presentSessions.size;
+        const total = uniqueSessions.size;
+        const present = presentSessions.size;
         const percentage = total ? (present / total) * 100 : 0;
 
         totalAttendancePercentage += percentage;
@@ -395,53 +296,43 @@ export const attendanceController = {
         return;
       }
 
-      // Get all attendance records for this student in this course
-      const attendanceRecords = await Attendance.find({
-        courseId,
-        studentId,
-      })
+      const attendance = await Attendance.findOne({ courseId, studentId })
         .populate("studentId", "registrationNumber name program")
         .populate("courseId", "code name type");
 
-      if (!attendanceRecords || attendanceRecords.length === 0) {
+      if (!attendance) {
         res.status(404).json({ message: "Attendance record not found" });
         return;
       }
 
-      // Combine records from all enrollment periods
-      let allRecords: IAttendanceRecord[] = [];
-      attendanceRecords.forEach((record) => {
-        allRecords = [...allRecords, ...record.records];
-      });
-
       // Filter records by component if needed
-      let filteredRecords = allRecords;
+      let filteredRecords = attendance.records;
+
       if (component) {
         filteredRecords = filteredRecords.filter(
-          (r: IAttendanceRecord) => r.component === component
+          (r) => r.component === component
         );
       } else if (isIntegratedCourse) {
         // For integrated courses without component specified, separate by component
         const theoryRecords = filteredRecords.filter(
-          (r: IAttendanceRecord) => r.component === "theory"
+          (r) => r.component === "theory"
         );
-        const labRecords = filteredRecords.filter(
-          (r: IAttendanceRecord) => r.component === "lab"
-        );
+        const labRecords = filteredRecords.filter((r) => r.component === "lab");
 
         // Count unique sessions for both components
         const theoryUniqueSessions = new Set();
-        theoryRecords.forEach((r: IAttendanceRecord) => {
+        theoryRecords.forEach((r) => {
           const sessionKey = `${r.date.toISOString().split("T")[0]}_${
             r.startTime || ""
           }${r.endTime || ""}`;
           theoryUniqueSessions.add(sessionKey);
         });
 
+        // Continuing the attendance controller
         const theoryPresentSessions = new Set();
         theoryRecords
-          .filter((r: IAttendanceRecord) => r.status === "present")
-          .forEach((r: IAttendanceRecord) => {
+          .filter((r) => r.status === "present")
+          .forEach((r) => {
             const sessionKey = `${r.date.toISOString().split("T")[0]}_${
               r.startTime || ""
             }${r.endTime || ""}`;
@@ -449,7 +340,7 @@ export const attendanceController = {
           });
 
         const labUniqueSessions = new Set();
-        labRecords.forEach((r: IAttendanceRecord) => {
+        labRecords.forEach((r) => {
           const sessionKey = `${r.date.toISOString().split("T")[0]}_${
             r.startTime || ""
           }${r.endTime || ""}`;
@@ -458,8 +349,8 @@ export const attendanceController = {
 
         const labPresentSessions = new Set();
         labRecords
-          .filter((r: IAttendanceRecord) => r.status === "present")
-          .forEach((r: IAttendanceRecord) => {
+          .filter((r) => r.status === "present")
+          .forEach((r) => {
             const sessionKey = `${r.date.toISOString().split("T")[0]}_${
               r.startTime || ""
             }${r.endTime || ""}`;
@@ -476,11 +367,9 @@ export const attendanceController = {
           : 0;
 
         res.json({
-          student: attendanceRecords[0].studentId,
-          course: attendanceRecords[0].courseId,
-          academicYear: attendanceRecords
-            .map((rec) => rec.academicYear)
-            .join(", "),
+          student: attendance.studentId,
+          course: attendance.courseId,
+          academicYear: attendance.academicYear,
           theory: {
             records: theoryRecords,
             attendancePercentage: Math.round(theoryAttendance * 100) / 100,
@@ -501,7 +390,7 @@ export const attendanceController = {
 
       // Count unique sessions
       const uniqueSessions = new Set();
-      filteredRecords.forEach((r: IAttendanceRecord) => {
+      filteredRecords.forEach((r) => {
         const sessionKey = `${r.date.toISOString().split("T")[0]}_${
           r.startTime || ""
         }${r.endTime || ""}_${r.component || "default"}`;
@@ -510,8 +399,8 @@ export const attendanceController = {
 
       const presentSessions = new Set();
       filteredRecords
-        .filter((r: IAttendanceRecord) => r.status === "present")
-        .forEach((r: IAttendanceRecord) => {
+        .filter((r) => r.status === "present")
+        .forEach((r) => {
           const sessionKey = `${r.date.toISOString().split("T")[0]}_${
             r.startTime || ""
           }${r.endTime || ""}_${r.component || "default"}`;
@@ -525,11 +414,9 @@ export const attendanceController = {
         : 0;
 
       res.json({
-        student: attendanceRecords[0].studentId,
-        course: attendanceRecords[0].courseId,
-        academicYear: attendanceRecords
-          .map((rec) => rec.academicYear)
-          .join(", "),
+        student: attendance.studentId,
+        course: attendance.courseId,
+        academicYear: attendance.academicYear,
         overall: {
           attendancePercentage: Math.round(attendancePercentage * 100) / 100,
           belowThreshold: attendancePercentage < 75,
@@ -550,15 +437,8 @@ export const attendanceController = {
   takeAttendance: async (req: Request, res: Response): Promise<void> => {
     try {
       const { courseId } = req.params;
-      const {
-        date,
-        startTime,
-        endTime,
-        component,
-        attendanceData,
-        academicYear,
-        remarks,
-      } = req.body;
+      const { date, startTime, endTime, component, attendanceData, remarks } =
+        req.body;
 
       if (!mongoose.Types.ObjectId.isValid(courseId)) {
         res.status(400).json({ message: "Invalid course ID format" });
@@ -609,7 +489,7 @@ export const attendanceController = {
       }
 
       // Get current academic year (could be passed from client too)
-      const currentAcademicYear = academicYear || "2023-24"; // Default or from request
+      const academicYear = req.body.academicYear || "2023-24"; // Default or from request
 
       // Process each student attendance
       const updates = [];
@@ -646,14 +526,14 @@ export const attendanceController = {
             let doc = await Attendance.findOne({
               courseId,
               studentId,
-              academicYear: currentAcademicYear,
+              academicYear,
             });
 
             if (!doc) {
               doc = new Attendance({
                 courseId,
                 studentId,
-                academicYear: currentAcademicYear,
+                academicYear,
                 records: [], // Start with empty records
               });
             }
@@ -670,23 +550,21 @@ export const attendanceController = {
               const endOfDay = new Date(attendanceDate);
               endOfDay.setHours(23, 59, 59, 999);
 
-              const recordIndex = updatedRecords.findIndex(
-                (r: IAttendanceRecord) => {
-                  const recordDate = new Date(r.date);
-                  const sameDate =
-                    recordDate >= startOfDay && recordDate <= endOfDay;
-                  const sameTime =
-                    (!startTime || r.startTime === startTime) &&
-                    (!endTime || r.endTime === endTime);
+              const recordIndex = updatedRecords.findIndex((r) => {
+                const recordDate = new Date(r.date);
+                const sameDate =
+                  recordDate >= startOfDay && recordDate <= endOfDay;
+                const sameTime =
+                  (!startTime || r.startTime === startTime) &&
+                  (!endTime || r.endTime === endTime);
 
-                  // Match based on date, time, and component
-                  if (isIntegratedCourse && component) {
-                    return sameDate && sameTime && r.component === component;
-                  }
-                  // For non-integrated courses, match on date and time
-                  return sameDate && sameTime;
+                // Match based on date, time, and component
+                if (isIntegratedCourse && component) {
+                  return sameDate && sameTime && r.component === component;
                 }
-              );
+                // For non-integrated courses, match on date and time
+                return sameDate && sameTime;
+              });
 
               if (recordIndex >= 0) {
                 // Replace existing record
@@ -821,5 +699,3 @@ export const attendanceController = {
     }
   },
 };
-
-export default attendanceController;

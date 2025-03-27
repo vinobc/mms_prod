@@ -1,5 +1,5 @@
 // client/src/components/attendance/AttendanceHistory.tsx
-import React, { useState, useMemo } from "react";
+import React, { useState } from "react";
 import {
   Box,
   Typography,
@@ -61,47 +61,39 @@ const AttendanceDetailsDialog: React.FC<AttendanceDetailsDialogProps> = ({
   if (!student) return null;
 
   // Filter records by component if needed
-  const filteredRecords = useMemo(() => {
-    if (!Array.isArray(attendanceRecords)) return [];
-
-    return component
-      ? attendanceRecords.filter((record) => record?.component === component)
-      : attendanceRecords;
-  }, [attendanceRecords, component]);
+  const filteredRecords = component
+    ? attendanceRecords.filter((record) => record.component === component)
+    : attendanceRecords;
 
   // Calculate attendance percentage
   const totalClasses = filteredRecords.length;
   const presentClasses = filteredRecords.filter(
-    (r) => r?.status === "present"
+    (r) => r.status === "present"
   ).length;
   const attendancePercentage = totalClasses
     ? (presentClasses / totalClasses) * 100
     : 0;
 
   // Get absent dates
-  const absentDates = useMemo(() => {
-    return filteredRecords
-      .filter((record) => record?.status === "absent")
-      .map((record, index) => {
-        const timeInfo =
-          record.startTime && record.endTime
-            ? `${record.startTime} - ${record.endTime}`
-            : undefined;
+  const absentDates = filteredRecords
+    .filter((record) => record.status === "absent")
+    .map((record) => {
+      const timeInfo =
+        record.startTime && record.endTime
+          ? `${record.startTime} - ${record.endTime}`
+          : undefined;
 
-        return {
-          id: `absent-${index}`,
-          date: new Date(record.date),
-          timeSlot: timeInfo,
-          component: record.component,
-        };
-      });
-  }, [filteredRecords]);
+      return {
+        date: new Date(record.date),
+        timeSlot: timeInfo,
+        component: record.component,
+      };
+    });
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
       <DialogTitle>
-        Attendance Details - {student?.name || "Unknown"} (
-        {student?.registrationNumber || "N/A"})
+        Attendance Details - {student.name} ({student.registrationNumber})
       </DialogTitle>
       <DialogContent dividers>
         <Box sx={{ mb: 3 }}>
@@ -112,14 +104,13 @@ const AttendanceDetailsDialog: React.FC<AttendanceDetailsDialogProps> = ({
                   Student Information
                 </Typography>
                 <Typography>
-                  <strong>Name:</strong> {student?.name || "Unknown"}
+                  <strong>Name:</strong> {student.name}
                 </Typography>
                 <Typography>
-                  <strong>Registration No:</strong>{" "}
-                  {student?.registrationNumber || "N/A"}
+                  <strong>Registration No:</strong> {student.registrationNumber}
                 </Typography>
                 <Typography>
-                  <strong>Program:</strong> {student?.program || "N/A"}
+                  <strong>Program:</strong> {student.program}
                 </Typography>
               </Paper>
             </Grid>
@@ -155,9 +146,9 @@ const AttendanceDetailsDialog: React.FC<AttendanceDetailsDialogProps> = ({
                 <strong>Absent Dates ({absentDates.length})</strong>
               </Typography>
               <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
-                {absentDates.map((absentInfo) => (
+                {absentDates.map((absentInfo, index) => (
                   <Chip
-                    key={absentInfo.id}
+                    key={index}
                     label={`${absentInfo.date.toLocaleDateString()} ${
                       absentInfo.timeSlot ? `(${absentInfo.timeSlot})` : ""
                     }`}
@@ -194,37 +185,35 @@ const AttendanceDetailsDialog: React.FC<AttendanceDetailsDialogProps> = ({
               <TableBody>
                 {filteredRecords.map((record, index) => (
                   <TableRow
-                    key={`record-${index}-${record?.date || "unknown"}`}
+                    key={index}
                     sx={{
                       bgcolor:
-                        record?.status === "absent"
+                        record.status === "absent"
                           ? "rgba(244, 67, 54, 0.08)"
                           : "inherit",
                     }}
                   >
                     <TableCell>
-                      {record?.date
-                        ? new Date(record.date).toLocaleDateString()
-                        : "Unknown"}
+                      {new Date(record.date).toLocaleDateString()}
                     </TableCell>
                     <TableCell>
-                      {record?.startTime && record?.endTime
+                      {record.startTime && record.endTime
                         ? `${record.startTime} - ${record.endTime}`
                         : "-"}
                     </TableCell>
                     <TableCell>
                       <Chip
                         label={
-                          record?.status === "present" ? "Present" : "Absent"
+                          record.status === "present" ? "Present" : "Absent"
                         }
                         color={
-                          record?.status === "present" ? "success" : "error"
+                          record.status === "present" ? "success" : "error"
                         }
                         size="small"
                       />
                     </TableCell>
-                    <TableCell>{record?.component || "-"}</TableCell>
-                    <TableCell>{record?.remarks || "-"}</TableCell>
+                    <TableCell>{record.component || "-"}</TableCell>
+                    <TableCell>{record.remarks || "-"}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -239,7 +228,7 @@ const AttendanceDetailsDialog: React.FC<AttendanceDetailsDialogProps> = ({
   );
 };
 
-const AttendanceHistory = ({
+const AttendanceHistory: React.FC<AttendanceHistoryProps> = ({
   courseId,
   component,
   attendanceData,
@@ -247,24 +236,20 @@ const AttendanceHistory = ({
   onDelete,
   onRefresh,
 }) => {
-  const [viewMode, setViewMode] = useState("students");
-  const [selectedStudent, setSelectedStudent] = useState(null);
+  const [viewMode, setViewMode] = useState<"students" | "dates">("students");
+  const [selectedStudent, setSelectedStudent] = useState<any | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
 
-  // Validate data is in expected format
-  const isValidData = useMemo(() => {
-    if (!Array.isArray(attendanceData)) return false;
-    if (!attendanceSummary) return false;
-    return true;
-  }, [attendanceData, attendanceSummary]);
-
   // Handle view mode change
-  const handleViewModeChange = (_, newValue) => {
+  const handleViewModeChange = (
+    _: React.SyntheticEvent,
+    newValue: "students" | "dates"
+  ) => {
     setViewMode(newValue);
   };
 
   // Open details dialog
-  const handleOpenDetails = (student) => {
+  const handleOpenDetails = (student: any) => {
     setSelectedStudent(student);
     setDetailsOpen(true);
   };
@@ -275,11 +260,11 @@ const AttendanceHistory = ({
   };
 
   // Handle delete attendance for a date and time slot
-  const handleDeleteAttendance = (sessionData) => {
+  const handleDeleteAttendance = (sessionData: any) => {
     onDelete(sessionData);
   };
 
-  if (!isValidData || attendanceData.length === 0) {
+  if (!attendanceData || attendanceData.length === 0) {
     return (
       <Box sx={{ mt: 3 }}>
         <Alert
@@ -302,16 +287,7 @@ const AttendanceHistory = ({
   }
 
   // Ensure attendanceSessions is available and is an array
-  const attendanceSessions = useMemo(() => {
-    return Array.isArray(attendanceSummary?.attendanceSessions)
-      ? attendanceSummary.attendanceSessions
-      : [];
-  }, [attendanceSummary]);
-
-  // Validate students for rendering
-  const validStudents = useMemo(() => {
-    return attendanceData.filter((student) => student?.studentId);
-  }, [attendanceData]);
+  const attendanceSessions = attendanceSummary.attendanceSessions || [];
 
   return (
     <Box>
@@ -347,7 +323,7 @@ const AttendanceHistory = ({
                 Total Students
               </Typography>
               <Typography variant="h6">
-                {attendanceSummary?.totalStudents || 0}
+                {attendanceSummary.totalStudents}
               </Typography>
             </Grid>
             <Grid item xs={12} sm={3}>
@@ -355,7 +331,7 @@ const AttendanceHistory = ({
                 Total Classes
               </Typography>
               <Typography variant="h6">
-                {attendanceSummary?.totalClasses || 0}
+                {attendanceSummary.totalClasses}
               </Typography>
             </Grid>
             <Grid item xs={12} sm={3}>
@@ -363,7 +339,7 @@ const AttendanceHistory = ({
                 Average Attendance
               </Typography>
               <Typography variant="h6">
-                {attendanceSummary?.averageAttendance?.toFixed(2) || "0.00"}%
+                {attendanceSummary.averageAttendance?.toFixed(2)}%
               </Typography>
             </Grid>
             <Grid item xs={12} sm={3}>
@@ -371,7 +347,7 @@ const AttendanceHistory = ({
                 Below Threshold
               </Typography>
               <Typography variant="h6" color="error">
-                {attendanceSummary?.belowThresholdCount || 0} students
+                {attendanceSummary.belowThresholdCount} students
               </Typography>
             </Grid>
           </Grid>
@@ -408,9 +384,9 @@ const AttendanceHistory = ({
               </TableRow>
             </TableHead>
             <TableBody>
-              {validStudents.map((student, index) => (
+              {attendanceData.map((student, index) => (
                 <TableRow
-                  key={`student-row-${index}`}
+                  key={student.studentId._id}
                   sx={{
                     backgroundColor: student.belowThreshold
                       ? "rgba(255, 0, 0, 0.05)"
@@ -418,30 +394,28 @@ const AttendanceHistory = ({
                   }}
                 >
                   <TableCell>{index + 1}</TableCell>
-                  <TableCell>
-                    {student.studentId?.registrationNumber || "N/A"}
-                  </TableCell>
-                  <TableCell>{student.studentId?.name || "Unknown"}</TableCell>
-                  <TableCell>{student.studentId?.program || "N/A"}</TableCell>
+                  <TableCell>{student.studentId.registrationNumber}</TableCell>
+                  <TableCell>{student.studentId.name}</TableCell>
+                  <TableCell>{student.studentId.program}</TableCell>
                   <TableCell>
                     <Chip
-                      label={`${
-                        student.attendancePercentage?.toFixed(2) || "0.00"
-                      }%`}
+                      label={`${student.attendancePercentage.toFixed(2)}%`}
                       color={student.belowThreshold ? "error" : "success"}
                       size="small"
                     />
                   </TableCell>
                   <TableCell>
-                    {student.presentClasses ?? 0} / {student.totalClasses ?? 0}
+                    {student.presentClasses} / {student.totalClasses}
                   </TableCell>
                   <TableCell>
-                    <IconButton
-                      size="small"
-                      onClick={() => handleOpenDetails(student.studentId)}
-                    >
-                      <InfoIcon />
-                    </IconButton>
+                    <Tooltip title="View Details">
+                      <IconButton
+                        size="small"
+                        onClick={() => handleOpenDetails(student.studentId)}
+                      >
+                        <InfoIcon />
+                      </IconButton>
+                    </Tooltip>
                   </TableCell>
                 </TableRow>
               ))}
@@ -462,17 +436,19 @@ const AttendanceHistory = ({
               </TableRow>
             </TableHead>
             <TableBody>
-              {attendanceSessions.length > 0 ? (
-                attendanceSessions.map((sessionInfo, index) => (
-                  <TableRow key={`session-${index}`}>
+              {Array.isArray(attendanceSessions) ? (
+                attendanceSessions.map((sessionInfo: any, index: number) => (
+                  <TableRow
+                    key={`${sessionInfo.date}_${
+                      sessionInfo.timeSlot || "default"
+                    }_${index}`}
+                  >
                     <TableCell>{index + 1}</TableCell>
                     <TableCell>
-                      {sessionInfo?.date
-                        ? new Date(sessionInfo.date).toLocaleDateString()
-                        : "Unknown Date"}
+                      {new Date(sessionInfo.date).toLocaleDateString()}
                     </TableCell>
                     <TableCell>
-                      {sessionInfo?.timeSlot ? (
+                      {sessionInfo.timeSlot ? (
                         <Chip
                           icon={<AccessTimeIcon />}
                           label={sessionInfo.timeSlot}
@@ -487,11 +463,10 @@ const AttendanceHistory = ({
                       )}
                     </TableCell>
                     <TableCell>
-                      {Array.isArray(sessionInfo?.components) &&
-                      sessionInfo.components.length > 0 ? (
-                        sessionInfo.components.map((comp, i) => (
+                      {Array.isArray(sessionInfo.components) ? (
+                        sessionInfo.components.map((comp: string) => (
                           <Chip
-                            key={`comp-${index}-${i}`}
+                            key={comp}
                             label={
                               comp === "default"
                                 ? "Regular"
@@ -508,13 +483,15 @@ const AttendanceHistory = ({
                       )}
                     </TableCell>
                     <TableCell>
-                      <IconButton
-                        size="small"
-                        color="error"
-                        onClick={() => handleDeleteAttendance(sessionInfo)}
-                      >
-                        <DeleteIcon />
-                      </IconButton>
+                      <Tooltip title="Delete Attendance Record">
+                        <IconButton
+                          size="small"
+                          color="error"
+                          onClick={() => handleDeleteAttendance(sessionInfo)}
+                        >
+                          <DeleteIcon />
+                        </IconButton>
+                      </Tooltip>
                     </TableCell>
                   </TableRow>
                 ))
@@ -540,9 +517,7 @@ const AttendanceHistory = ({
         attendanceRecords={
           (selectedStudent &&
             attendanceData.find(
-              (student) =>
-                student?.studentId &&
-                student.studentId._id === selectedStudent._id
+              (student) => student.studentId._id === selectedStudent._id
             )?.records) ||
           []
         }

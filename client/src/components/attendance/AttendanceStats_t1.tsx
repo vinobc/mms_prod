@@ -1,5 +1,5 @@
 // client/src/components/attendance/AttendanceStats.tsx
-import React, { useMemo } from "react";
+import React, { useState } from "react";
 import {
   Box,
   Typography,
@@ -17,6 +17,9 @@ import {
   Chip,
   Card,
   CardContent,
+  CardHeader,
+  Divider,
+  Tooltip,
 } from "@mui/material";
 import {
   Refresh as RefreshIcon,
@@ -37,14 +40,24 @@ import {
   Pie,
   Cell,
   Legend,
+  Line,
+  LineChart,
   ReferenceLine,
 } from "recharts";
+
+interface AttendanceStatsProps {
+  courseId: string;
+  component?: "theory" | "lab";
+  attendanceData: any[];
+  attendanceSummary: any;
+  onRefresh: () => void;
+}
 
 // Define colors
 const COLORS = ["#4caf50", "#ff9800", "#f44336"];
 const THRESHOLD = 75;
 
-const AttendanceStats = ({
+const AttendanceStats: React.FC<AttendanceStatsProps> = ({
   courseId,
   component,
   attendanceData,
@@ -52,25 +65,17 @@ const AttendanceStats = ({
   onRefresh,
 }) => {
   // Group students by attendance range
-  const attendanceRanges = useMemo(() => {
+  const getAttendanceRanges = () => {
     const ranges = [
       { name: "Good (≥75%)", value: 0, color: "#4caf50" },
       { name: "Average (50-75%)", value: 0, color: "#ff9800" },
       { name: "Poor (<50%)", value: 0, color: "#f44336" },
     ];
 
-    if (!Array.isArray(attendanceData)) {
-      return ranges;
-    }
-
     attendanceData.forEach((student) => {
-      if (!student) return;
-
-      const percentage = student.attendancePercentage || 0;
-
-      if (percentage >= 75) {
+      if (student.attendancePercentage >= 75) {
         ranges[0].value++;
-      } else if (percentage >= 50) {
+      } else if (student.attendancePercentage >= 50) {
         ranges[1].value++;
       } else {
         ranges[2].value++;
@@ -78,28 +83,29 @@ const AttendanceStats = ({
     });
 
     return ranges;
-  }, [attendanceData]);
+  };
 
   // Get students with below threshold attendance
-  const studentsBelowThreshold = useMemo(() => {
-    if (!Array.isArray(attendanceData)) {
-      return [];
-    }
-
+  const getStudentsBelowThreshold = () => {
     return attendanceData
-      .filter((student) => student?.belowThreshold && student?.studentId)
-      .sort(
-        (a, b) => (a.attendancePercentage || 0) - (b.attendancePercentage || 0)
-      );
-  }, [attendanceData]);
+      .filter((student) => student.belowThreshold)
+      .sort((a, b) => a.attendancePercentage - b.attendancePercentage);
+  };
+
+  // Get students data for bar chart
+  const getStudentChartData = () => {
+    return attendanceData
+      .map((student) => ({
+        name: student.studentId.registrationNumber,
+        attendance: student.attendancePercentage,
+        fullName: student.studentId.name,
+        belowThreshold: student.belowThreshold,
+      }))
+      .sort((a, b) => a.attendance - b.attendance);
+  };
 
   // If data is loading or not available
-  if (
-    !attendanceData ||
-    !Array.isArray(attendanceData) ||
-    attendanceData.length === 0 ||
-    !attendanceSummary
-  ) {
+  if (!attendanceData || attendanceData.length === 0 || !attendanceSummary) {
     return (
       <Box
         sx={{
@@ -128,12 +134,9 @@ const AttendanceStats = ({
     );
   }
 
-  // Filter valid students
-  const validStudents = useMemo(() => {
-    return Array.isArray(attendanceData)
-      ? attendanceData.filter((student) => student?.studentId)
-      : [];
-  }, [attendanceData]);
+  const attendanceRanges = getAttendanceRanges();
+  const studentsBelowThreshold = getStudentsBelowThreshold();
+  const studentChartData = getStudentChartData();
 
   return (
     <Box>
@@ -170,7 +173,7 @@ const AttendanceStats = ({
                 Total Students
               </Typography>
               <Typography variant="h4">
-                {attendanceSummary?.totalStudents || 0}
+                {attendanceSummary.totalStudents}
               </Typography>
             </CardContent>
           </Card>
@@ -183,7 +186,7 @@ const AttendanceStats = ({
                 Total Classes
               </Typography>
               <Typography variant="h4">
-                {attendanceSummary?.totalClasses || 0}
+                {attendanceSummary.totalClasses}
               </Typography>
             </CardContent>
           </Card>
@@ -196,7 +199,7 @@ const AttendanceStats = ({
                 Average Attendance
               </Typography>
               <Typography variant="h4">
-                {attendanceSummary?.averageAttendance?.toFixed(2) || "0.00"}%
+                {attendanceSummary.averageAttendance?.toFixed(2)}%
               </Typography>
             </CardContent>
           </Card>
@@ -211,17 +214,21 @@ const AttendanceStats = ({
               <Typography color="textSecondary" gutterBottom>
                 Below Threshold
               </Typography>
-              <Box sx={{ display: "flex", alignItems: "center" }}>
-                <Typography variant="h4" color="error">
-                  {attendanceSummary?.belowThresholdCount || 0}
-                </Typography>
-                <Box component="span" sx={{ ml: 1, color: "text.secondary" }}>
+              <Typography
+                variant="h4"
+                color="error"
+                sx={{ display: "flex", alignItems: "center" }}
+              >
+                {attendanceSummary.belowThresholdCount}
+                <Typography
+                  variant="subtitle1"
+                  color="textSecondary"
+                  sx={{ ml: 1 }}
+                >
                   student
-                  {(attendanceSummary?.belowThresholdCount || 0) !== 1
-                    ? "s"
-                    : ""}
-                </Box>
-              </Box>
+                  {attendanceSummary.belowThresholdCount !== 1 ? "s" : ""}
+                </Typography>
+              </Typography>
             </CardContent>
           </Card>
         </Grid>
@@ -244,7 +251,7 @@ const AttendanceStats = ({
                     cy="50%"
                     labelLine={true}
                     label={({ name, percent }) =>
-                      `${name}: ${((percent || 0) * 100).toFixed(0)}%`
+                      `${name}: ${(percent * 100).toFixed(0)}%`
                     }
                     outerRadius={80}
                     fill="#8884d8"
@@ -291,11 +298,10 @@ const AttendanceStats = ({
               <Box sx={{ height: 300 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
-                    data={studentsBelowThreshold.map((student, index) => ({
-                      name: student.studentId?.registrationNumber || "Unknown",
-                      attendance: student.attendancePercentage || 0,
-                      fullName: student.studentId?.name || "Unknown Student",
-                      id: `student-${index}`, // Added to ensure uniqueness
+                    data={studentsBelowThreshold.map((student) => ({
+                      name: student.studentId.registrationNumber,
+                      attendance: student.attendancePercentage,
+                      fullName: student.studentId.name,
                     }))}
                     margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
                   >
@@ -311,8 +317,8 @@ const AttendanceStats = ({
                     />
                     <RechartsTooltip
                       formatter={(value, name, props) => [
-                        `${(value || 0).toFixed(2)}%`,
-                        props?.payload?.fullName || "Unknown",
+                        `${value.toFixed(2)}%`,
+                        props.payload.fullName,
                       ]}
                     />
                     <Bar
@@ -322,6 +328,7 @@ const AttendanceStats = ({
                     />
                     {/* Threshold line */}
                     <ReferenceLine y={75} stroke="#000" strokeDasharray="3 3" />
+                    <RechartsTooltip />
                   </BarChart>
                 </ResponsiveContainer>
               </Box>
@@ -367,12 +374,12 @@ const AttendanceStats = ({
 
                 // Create CSV rows from student data
                 const rows = studentsBelowThreshold.map((student) => [
-                  student.studentId?.registrationNumber || "Unknown",
-                  student.studentId?.name || "Unknown Student",
-                  student.studentId?.program || "Unknown Program",
-                  `${(student.attendancePercentage || 0).toFixed(2)}%`,
-                  student.presentClasses || 0,
-                  student.totalClasses || 0,
+                  student.studentId.registrationNumber,
+                  student.studentId.name,
+                  student.studentId.program,
+                  `${student.attendancePercentage.toFixed(2)}%`,
+                  student.presentClasses,
+                  student.totalClasses,
                 ]);
 
                 // Combine headers and rows
@@ -381,6 +388,7 @@ const AttendanceStats = ({
                   ...rows.map((row) =>
                     row
                       .map((cell) =>
+                        // Wrap cells containing commas in quotes
                         typeof cell === "string" && cell.includes(",")
                           ? `"${cell}"`
                           : cell
@@ -430,29 +438,22 @@ const AttendanceStats = ({
                 </TableRow>
               </TableHead>
               <TableBody>
-                {studentsBelowThreshold.map((student, index) => (
-                  <TableRow key={`below-student-${index}`}>
+                {studentsBelowThreshold.map((student) => (
+                  <TableRow key={student.studentId._id}>
                     <TableCell>
-                      {student.studentId?.registrationNumber || "Unknown"}
+                      {student.studentId.registrationNumber}
                     </TableCell>
-                    <TableCell>
-                      {student.studentId?.name || "Unknown Student"}
-                    </TableCell>
-                    <TableCell>
-                      {student.studentId?.program || "Unknown Program"}
-                    </TableCell>
+                    <TableCell>{student.studentId.name}</TableCell>
+                    <TableCell>{student.studentId.program}</TableCell>
                     <TableCell>
                       <Chip
-                        label={`${(student.attendancePercentage || 0).toFixed(
-                          2
-                        )}%`}
+                        label={`${student.attendancePercentage.toFixed(2)}%`}
                         color="error"
                         size="small"
                       />
                     </TableCell>
                     <TableCell>
-                      {student.presentClasses || 0} /{" "}
-                      {student.totalClasses || 0}
+                      {student.presentClasses} / {student.totalClasses}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -481,15 +482,11 @@ const AttendanceStats = ({
               </TableRow>
             </TableHead>
             <TableBody>
-              {validStudents
-                .sort(
-                  (a, b) =>
-                    (a.attendancePercentage || 0) -
-                    (b.attendancePercentage || 0)
-                )
-                .map((student, index) => (
+              {attendanceData
+                .sort((a, b) => a.attendancePercentage - b.attendancePercentage)
+                .map((student) => (
                   <TableRow
-                    key={`all-student-${index}`}
+                    key={student.studentId._id}
                     sx={{
                       backgroundColor: student.belowThreshold
                         ? "rgba(255, 0, 0, 0.05)"
@@ -497,26 +494,19 @@ const AttendanceStats = ({
                     }}
                   >
                     <TableCell>
-                      {student.studentId?.registrationNumber || "Unknown"}
+                      {student.studentId.registrationNumber}
                     </TableCell>
-                    <TableCell>
-                      {student.studentId?.name || "Unknown Student"}
-                    </TableCell>
-                    <TableCell>
-                      {student.studentId?.program || "Unknown Program"}
-                    </TableCell>
+                    <TableCell>{student.studentId.name}</TableCell>
+                    <TableCell>{student.studentId.program}</TableCell>
                     <TableCell>
                       <Chip
-                        label={`${(student.attendancePercentage || 0).toFixed(
-                          2
-                        )}%`}
+                        label={`${student.attendancePercentage.toFixed(2)}%`}
                         color={student.belowThreshold ? "error" : "success"}
                         size="small"
                       />
                     </TableCell>
                     <TableCell>
-                      {student.presentClasses || 0} /{" "}
-                      {student.totalClasses || 0}
+                      {student.presentClasses} / {student.totalClasses}
                     </TableCell>
                     <TableCell>
                       {student.belowThreshold ? (

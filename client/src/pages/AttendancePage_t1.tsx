@@ -21,9 +21,11 @@ import {
   Card,
   CardContent,
   CardActions,
-  Chip,
+  Chip, // Add Chip import
 } from "@mui/material";
-import { AccessTime as AccessTimeIcon } from "@mui/icons-material";
+import {
+  AccessTime as AccessTimeIcon, // Add AccessTimeIcon import
+} from "@mui/icons-material";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
@@ -34,42 +36,26 @@ import { courseService } from "../services/courseService";
 import { attendanceService } from "../services/attendanceService";
 import { Course } from "../types";
 import { facultyService } from "../services/facultyService";
-import ErrorBoundary from "../components/scores/ErrorBoundary";
 
-// Tab Panel component for better organization and error handling
-const TabPanel = (props) => {
-  const { children, value, index, ...other } = props;
+// Rest of the component code remains the same
 
-  return (
-    <div
-      role="tabpanel"
-      hidden={value !== index}
-      id={`attendance-tabpanel-${index}`}
-      aria-labelledby={`attendance-tab-${index}`}
-      {...other}
-    >
-      {value === index && <Box sx={{ pt: 3 }}>{children}</Box>}
-    </div>
-  );
-};
-
-const AttendancePage = () => {
+const AttendancePage: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
 
   // State variables
-  const [course, setCourse] = useState(null);
+  const [course, setCourse] = useState<Course | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [success, setSuccess] = useState(null);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [tabIndex, setTabIndex] = useState(0);
-  const [attendanceDate, setAttendanceDate] = useState(new Date());
-  const [component, setComponent] = useState("");
-  const [attendanceData, setAttendanceData] = useState([]);
-  const [attendanceSummary, setAttendanceSummary] = useState(null);
+  const [attendanceDate, setAttendanceDate] = useState<Date | null>(new Date());
+  const [component, setComponent] = useState<"theory" | "lab" | "">("");
+  const [attendanceData, setAttendanceData] = useState<any[]>([]);
+  const [attendanceSummary, setAttendanceSummary] = useState<any | null>(null);
 
   // For course selection screen
-  const [assignedCourses, setAssignedCourses] = useState([]);
+  const [assignedCourses, setAssignedCourses] = useState<Course[]>([]);
   const [loadingCourses, setLoadingCourses] = useState(false);
 
   // Check if courseId is provided in URL
@@ -92,7 +78,7 @@ const AttendancePage = () => {
       const courses = await facultyService.getAssignedCourses();
       setAssignedCourses(courses);
       setLoading(false);
-    } catch (error) {
+    } catch (error: any) {
       setError(error.message || "Failed to load assigned courses");
       setLoading(false);
     } finally {
@@ -101,7 +87,7 @@ const AttendancePage = () => {
   };
 
   // Fetch course data
-  const fetchCourseData = async (courseId) => {
+  const fetchCourseData = async (courseId: string) => {
     try {
       setLoading(true);
       const courseData = await courseService.getCourse(courseId);
@@ -124,7 +110,7 @@ const AttendancePage = () => {
       // Fetch attendance data
       await fetchAttendanceData(courseId);
       await fetchAttendanceSummary(courseId);
-    } catch (error) {
+    } catch (error: any) {
       setError(error.message || "Failed to load course data");
     } finally {
       setLoading(false);
@@ -132,50 +118,51 @@ const AttendancePage = () => {
   };
 
   // Fetch attendance data for current course
-  const fetchAttendanceData = async (courseId) => {
+  const fetchAttendanceData = async (courseId: string) => {
     try {
       setLoading(true);
-      const params = {};
+      const params: any = {};
       if (component) params.component = component;
 
       const attendanceData = await attendanceService.getCourseAttendance(
         courseId,
         params
       );
-      setAttendanceData(attendanceData || []);
-    } catch (error) {
+      setAttendanceData(attendanceData);
+    } catch (error: any) {
       setError(error.message || "Failed to load attendance data");
-      setAttendanceData([]);
     } finally {
       setLoading(false);
     }
   };
 
   // Fetch attendance summary
-  const fetchAttendanceSummary = async (courseId) => {
+  const fetchAttendanceSummary = async (courseId: string) => {
     try {
       setLoading(true);
       const summary = await attendanceService.getAttendanceSummary(
         courseId,
         component || undefined
       );
-      setAttendanceSummary(summary || null);
-    } catch (error) {
+      setAttendanceSummary(summary);
+    } catch (error: any) {
       console.error("Error fetching attendance summary:", error);
-      setAttendanceSummary(null);
+      // Don't set error state here to avoid blocking the page if only summary fails
     } finally {
       setLoading(false);
     }
   };
 
   // Handle tab change
-  const handleTabChange = (_, newValue) => {
+  const handleTabChange = (_: React.SyntheticEvent<{}>, newValue: number) => {
     setTabIndex(newValue);
   };
 
   // Handle component change (theory/lab)
-  const handleComponentChange = (event) => {
-    const newComponent = event.target.value;
+  const handleComponentChange = (
+    event: React.ChangeEvent<{ value: unknown }>
+  ) => {
+    const newComponent = event.target.value as "theory" | "lab" | "";
     setComponent(newComponent);
 
     // Refresh data with new component
@@ -186,17 +173,17 @@ const AttendancePage = () => {
   };
 
   // Handle date change
-  const handleDateChange = (date) => {
+  const handleDateChange = (date: Date | null) => {
     setAttendanceDate(date);
   };
 
   // Handle selecting a course from the grid
-  const handleCourseSelect = (courseId) => {
+  const handleCourseSelect = (courseId: string) => {
     navigate(`/attendance?courseId=${courseId}`);
   };
 
   // Take attendance
-  const handleSaveAttendance = async (attendanceData) => {
+  const handleSaveAttendance = async (attendanceData: any) => {
     if (!course || !attendanceDate) {
       setError("Course and date are required");
       return;
@@ -217,7 +204,7 @@ const AttendancePage = () => {
       const { students, startTime, endTime } = attendanceData;
 
       // Format data for API
-      const formattedData = students.map((record) => ({
+      const formattedData = students.map((record: any) => ({
         studentId: record.studentId,
         status: record.status || "absent",
         remarks: record.remarks,
@@ -244,7 +231,7 @@ const AttendancePage = () => {
       // Refresh attendance data
       await fetchAttendanceData(course._id);
       await fetchAttendanceSummary(course._id);
-    } catch (error) {
+    } catch (error: any) {
       setError(error.message || "Failed to save attendance");
     } finally {
       setLoading(false);
@@ -252,7 +239,7 @@ const AttendancePage = () => {
   };
 
   // Delete attendance for a date and time slot
-  const handleDeleteAttendance = async (sessionData) => {
+  const handleDeleteAttendance = async (sessionData: any) => {
     if (!course) return;
 
     const { date, timeSlot } = sessionData;
@@ -292,7 +279,7 @@ const AttendancePage = () => {
       // Refresh attendance data
       await fetchAttendanceData(course._id);
       await fetchAttendanceSummary(course._id);
-    } catch (error) {
+    } catch (error: any) {
       setError(error.message || "Failed to delete attendance");
     } finally {
       setLoading(false);
@@ -471,8 +458,9 @@ const AttendancePage = () => {
           </Tabs>
         </Box>
 
-        <ErrorBoundary>
-          <TabPanel value={tabIndex} index={0}>
+        {/* Take Attendance Tab */}
+        <div role="tabpanel" hidden={tabIndex !== 0}>
+          {tabIndex === 0 && (
             <Box>
               <Box display="flex" alignItems="center" mb={3} gap={2}>
                 <LocalizationProvider dateAdapter={AdapterDateFns}>
@@ -514,81 +502,41 @@ const AttendancePage = () => {
                 courseType={course.type}
               />
             </Box>
-          </TabPanel>
+          )}
+        </div>
 
-          <TabPanel value={tabIndex} index={1}>
-            <ErrorBoundary
-              fallback={
-                <Alert severity="error">
-                  There was an error loading attendance history. Please try
-                  refreshing.
-                  <Button
-                    onClick={() => {
-                      fetchAttendanceData(course._id);
-                      fetchAttendanceSummary(course._id);
-                    }}
-                    color="inherit"
-                    size="small"
-                    sx={{ ml: 2 }}
-                  >
-                    Refresh Data
-                  </Button>
-                </Alert>
-              }
-            >
-              {tabIndex === 1 && attendanceData && attendanceSummary && (
-                <AttendanceHistory
-                  key={`history-${component || "default"}-${course._id}`}
-                  courseId={course._id}
-                  component={component || undefined}
-                  attendanceData={attendanceData || []}
-                  attendanceSummary={attendanceSummary || {}}
-                  onDelete={handleDeleteAttendance}
-                  onRefresh={() => {
-                    fetchAttendanceData(course._id);
-                    fetchAttendanceSummary(course._id);
-                  }}
-                />
-              )}
-            </ErrorBoundary>
-          </TabPanel>
+        {/* Attendance History Tab */}
+        <div role="tabpanel" hidden={tabIndex !== 1}>
+          {tabIndex === 1 && (
+            <AttendanceHistory
+              courseId={course._id}
+              component={component || undefined}
+              attendanceData={attendanceData}
+              attendanceSummary={attendanceSummary}
+              onDelete={handleDeleteAttendance}
+              onRefresh={() => {
+                fetchAttendanceData(course._id);
+                fetchAttendanceSummary(course._id);
+              }}
+            />
+          )}
+        </div>
 
-          <TabPanel value={tabIndex} index={2}>
-            <ErrorBoundary
-              fallback={
-                <Alert severity="error">
-                  There was an error loading attendance statistics. Please try
-                  refreshing.
-                  <Button
-                    onClick={() => {
-                      fetchAttendanceData(course._id);
-                      fetchAttendanceSummary(course._id);
-                    }}
-                    color="inherit"
-                    size="small"
-                    sx={{ ml: 2 }}
-                  >
-                    Refresh Data
-                  </Button>
-                </Alert>
-              }
-            >
-              {tabIndex === 2 && attendanceData && attendanceSummary && (
-                <AttendanceStats
-                  key={`stats-${component || "default"}-${course._id}`}
-                  courseId={course._id}
-                  component={component || undefined}
-                  attendanceData={attendanceData || []}
-                  attendanceSummary={attendanceSummary || {}}
-                  onRefresh={() => {
-                    fetchAttendanceData(course._id);
-                    fetchAttendanceSummary(course._id);
-                  }}
-                />
-              )}
-            </ErrorBoundary>
-          </TabPanel>
-        </ErrorBoundary>
+        {/* Attendance Statistics Tab */}
+        <div role="tabpanel" hidden={tabIndex !== 2}>
+          {tabIndex === 2 && (
+            <AttendanceStats
+              courseId={course._id}
+              component={component || undefined}
+              attendanceData={attendanceData}
+              attendanceSummary={attendanceSummary}
+              onRefresh={() => {
+                fetchAttendanceData(course._id);
+                fetchAttendanceSummary(course._id);
+              }}
+            />
+          )}
+        </div>
       </Paper>
 
       {/* Snackbar for messages */}
