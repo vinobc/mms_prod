@@ -88,11 +88,9 @@ const AttendanceStats = ({
 
     return attendanceData
       .filter((student) => student?.belowThreshold && student?.studentId)
-      .sort((a, b) => {
-        const regA = a.studentId?.registrationNumber || "";
-        const regB = b.studentId?.registrationNumber || "";
-        return regA.localeCompare(regB);
-      });
+      .sort(
+        (a, b) => (a.attendancePercentage || 0) - (b.attendancePercentage || 0)
+      );
   }, [attendanceData]);
 
   // If data is loading or not available
@@ -484,11 +482,11 @@ const AttendanceStats = ({
             </TableHead>
             <TableBody>
               {validStudents
-                .sort((a, b) => {
-                  const regA = a.studentId?.registrationNumber || "";
-                  const regB = b.studentId?.registrationNumber || "";
-                  return regA.localeCompare(regB);
-                })
+                .sort(
+                  (a, b) =>
+                    (a.attendancePercentage || 0) -
+                    (b.attendancePercentage || 0)
+                )
                 .map((student, index) => (
                   <TableRow
                     key={`all-student-${index}`}

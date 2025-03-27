@@ -162,21 +162,17 @@ const AttendanceTable: React.FC<AttendanceTableProps> = ({
       const courseStudents = await studentService.getStudentsByCourse(courseId);
 
       // Map to student attendance records
-      const studentRecords = courseStudents
-        .map((student: any) => ({
-          studentId: student._id,
-          registrationNumber: student.registrationNumber,
-          name: student.name,
-          program: student.program,
-          status: "absent" as "present" | "absent", // Default to absent
-          attendancePercentage: undefined,
-          belowThreshold: false,
-          remarks: "",
-          isEditing: false,
-        }))
-        .sort((a, b) =>
-          a.registrationNumber.localeCompare(b.registrationNumber)
-        );
+      const studentRecords = courseStudents.map((student: any) => ({
+        studentId: student._id,
+        registrationNumber: student.registrationNumber,
+        name: student.name,
+        program: student.program,
+        status: "absent" as "present" | "absent", // Default to absent
+        attendancePercentage: undefined,
+        belowThreshold: false,
+        remarks: "",
+        isEditing: false,
+      }));
 
       setStudents(studentRecords);
     } catch (error: any) {

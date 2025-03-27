@@ -432,52 +432,43 @@ const AttendanceHistory: React.FC<AttendanceHistoryProps> = ({
               </TableRow>
             </TableHead>
             <TableBody>
-              {validStudents
-                .sort((a, b) => {
-                  const regA = a.studentId?.registrationNumber || "";
-                  const regB = b.studentId?.registrationNumber || "";
-                  return regA.localeCompare(regB);
-                })
-                .map((student, index) => (
-                  <TableRow
-                    key={`student-row-${index}`}
-                    sx={{
-                      backgroundColor: student.belowThreshold
-                        ? "rgba(255, 0, 0, 0.05)"
-                        : "inherit",
-                    }}
-                  >
-                    <TableCell>{index + 1}</TableCell>
-                    <TableCell>
-                      {student.studentId?.registrationNumber || "N/A"}
-                    </TableCell>
-                    <TableCell>
-                      {student.studentId?.name || "Unknown"}
-                    </TableCell>
-                    <TableCell>{student.studentId?.program || "N/A"}</TableCell>
-                    <TableCell>
-                      <Chip
-                        label={`${
-                          student.attendancePercentage?.toFixed(2) || "0.00"
-                        }%`}
-                        color={student.belowThreshold ? "error" : "success"}
-                        size="small"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      {student.presentClasses ?? 0} /{" "}
-                      {student.totalClasses ?? 0}
-                    </TableCell>
-                    <TableCell>
-                      <IconButton
-                        size="small"
-                        onClick={() => handleOpenDetails(student.studentId)}
-                      >
-                        <InfoIcon />
-                      </IconButton>
-                    </TableCell>
-                  </TableRow>
-                ))}
+              {validStudents.map((student, index) => (
+                <TableRow
+                  key={`student-row-${index}`}
+                  sx={{
+                    backgroundColor: student.belowThreshold
+                      ? "rgba(255, 0, 0, 0.05)"
+                      : "inherit",
+                  }}
+                >
+                  <TableCell>{index + 1}</TableCell>
+                  <TableCell>
+                    {student.studentId?.registrationNumber || "N/A"}
+                  </TableCell>
+                  <TableCell>{student.studentId?.name || "Unknown"}</TableCell>
+                  <TableCell>{student.studentId?.program || "N/A"}</TableCell>
+                  <TableCell>
+                    <Chip
+                      label={`${
+                        student.attendancePercentage?.toFixed(2) || "0.00"
+                      }%`}
+                      color={student.belowThreshold ? "error" : "success"}
+                      size="small"
+                    />
+                  </TableCell>
+                  <TableCell>
+                    {student.presentClasses ?? 0} / {student.totalClasses ?? 0}
+                  </TableCell>
+                  <TableCell>
+                    <IconButton
+                      size="small"
+                      onClick={() => handleOpenDetails(student.studentId)}
+                    >
+                      <InfoIcon />
+                    </IconButton>
+                  </TableCell>
+                </TableRow>
+              ))}
             </TableBody>
           </Table>
         </TableContainer>

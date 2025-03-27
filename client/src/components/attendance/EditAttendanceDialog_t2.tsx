@@ -29,7 +29,6 @@ import {
   InputAdornment,
   Tooltip,
   Chip,
-  SelectChangeEvent,
 } from "@mui/material";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { TimePicker } from "@mui/x-date-pickers/TimePicker";
@@ -105,6 +104,18 @@ const EditAttendanceDialog: React.FC<EditAttendanceDialogProps> = ({
   const [startTimeObj, setStartTimeObj] = useState<Date | null>(null);
   const [endTimeObj, setEndTimeObj] = useState<Date | null>(null);
   const [showCustomTime, setShowCustomTime] = useState<boolean>(true);
+
+  const normalizeTime = (time: string): string => {
+    if (!time) return "";
+
+    // Handle various time formats (e.g., "9:00" vs "09:00")
+    try {
+      const timeObj = parse(time, "HH:mm", new Date());
+      return format(timeObj, "HH:mm");
+    } catch (err) {
+      return time; // Return original if parsing fails
+    }
+  };
 
   useEffect(() => {
     if (open && sessionData) {
@@ -184,8 +195,10 @@ const EditAttendanceDialog: React.FC<EditAttendanceDialogProps> = ({
   };
 
   // Handle time slot selection
-  const handleTimeSlotChange = (event: SelectChangeEvent) => {
-    const value = event.target.value;
+  const handleTimeSlotChange = (
+    event: React.ChangeEvent<{ value: unknown }>
+  ) => {
+    const value = event.target.value as string;
     setSelectedTimeSlot(value);
 
     if (value !== "custom") {
@@ -210,7 +223,6 @@ const EditAttendanceDialog: React.FC<EditAttendanceDialogProps> = ({
       setShowCustomTime(true);
     }
   };
-
   // Handle custom time changes
   const handleStartTimeChange = (newTime: Date | null) => {
     setStartTimeObj(newTime);
@@ -246,7 +258,6 @@ const EditAttendanceDialog: React.FC<EditAttendanceDialogProps> = ({
       setLoading(true);
       setError(null);
 
-      // Ensure we have required data
       if (!courseId || !originalDate) {
         setStudents([]);
         return;
@@ -254,6 +265,14 @@ const EditAttendanceDialog: React.FC<EditAttendanceDialogProps> = ({
 
       // Format the date for the API
       const formattedDate = format(originalDate, "yyyy-MM-dd");
+
+      console.log("Fetching attendance for:", {
+        courseId,
+        date: formattedDate,
+        component: originalComponent || "all",
+        startTime: originalStartTime,
+        endTime: originalEndTime,
+      });
 
       // Fetch attendance data
       const attendanceData = await attendanceService.getCourseAttendance(
@@ -265,43 +284,79 @@ const EditAttendanceDialog: React.FC<EditAttendanceDialogProps> = ({
         }
       );
 
+      console.log("Received attendance data:", attendanceData);
+
       // Process and filter students for this specific time slot
       if (Array.isArray(attendanceData) && attendanceData.length > 0) {
         const sessionStudents = attendanceData
           .filter(
             (student) => student && student.studentId && student.studentId._id
-          ) // Filter out invalid student data
+          )
           .map((student) => {
             // Find the specific record for this session
-            const sessionRecord = Array.isArray(student.records)
-              ? student.records.find((record: any) => {
+            let matchedRecord = null;
+
+            if (Array.isArray(student.records)) {
+              // First try to find an exact match
+              matchedRecord = student.records.find((record: any) => {
+                if (!record || !record.date) return false;
+
+                try {
+                  const recordDate = new Date(record.date).toDateString();
+                  const sessionDate = originalDate.toDateString();
+
+                  // More flexible matching for time slots
+                  const matchesTime =
+                    (!originalStartTime && !originalEndTime) ||
+                    (normalizeTime(record.startTime) ===
+                      normalizeTime(originalStartTime) &&
+                      normalizeTime(record.endTime) ===
+                        normalizeTime(originalEndTime));
+
+                  // Case-insensitive component matching
+                  const matchesComponent =
+                    !originalComponent ||
+                    record.component?.toLowerCase() ===
+                      originalComponent?.toLowerCase();
+
+                  return (
+                    recordDate === sessionDate &&
+                    matchesTime &&
+                    matchesComponent
+                  );
+                } catch (err) {
+                  console.error("Error comparing record:", err);
+                  return false;
+                }
+              });
+
+              // If no exact match, try to find a record with just the same date and component
+              if (!matchedRecord) {
+                matchedRecord = student.records.find((record: any) => {
                   if (!record || !record.date) return false;
 
                   try {
                     const recordDate = new Date(record.date).toDateString();
                     const sessionDate = originalDate.toDateString();
 
-                    const matchesTime =
-                      !originalStartTime ||
-                      !originalEndTime ||
-                      (record.startTime === originalStartTime &&
-                        record.endTime === originalEndTime);
-
+                    // Case-insensitive component matching
                     const matchesComponent =
                       !originalComponent ||
-                      record.component === originalComponent;
+                      record.component?.toLowerCase() ===
+                        originalComponent?.toLowerCase();
 
-                    return (
-                      recordDate === sessionDate &&
-                      matchesTime &&
-                      matchesComponent
-                    );
+                    return recordDate === sessionDate && matchesComponent;
                   } catch (err) {
-                    console.error("Error comparing record dates:", err);
                     return false;
                   }
-                })
-              : null;
+                });
+              }
+            }
+
+            console.log(
+              `Student ${student.studentId.name} status:`,
+              matchedRecord ? matchedRecord.status : "not found"
+            );
 
             return {
               studentId: student.studentId._id,
@@ -309,24 +364,20 @@ const EditAttendanceDialog: React.FC<EditAttendanceDialogProps> = ({
                 student.studentId.registrationNumber || "Unknown",
               name: student.studentId.name || "Unknown",
               program: student.studentId.program || "Unknown",
-              status: sessionRecord?.status || "absent",
-              remarks: sessionRecord?.remarks || "",
+              status: matchedRecord?.status || "absent",
+              remarks: matchedRecord?.remarks || "",
               isEditing: false,
             };
-          })
-          .sort((a, b) =>
-            a.registrationNumber.localeCompare(b.registrationNumber)
-          );
+          });
 
         setStudents(sessionStudents);
       } else {
-        // Initialize with empty array if no data
         setStudents([]);
       }
     } catch (error: any) {
       console.error("Error loading session attendance:", error);
       setError(error.message || "Failed to load attendance data");
-      setStudents([]); // Initialize with empty array to prevent errors
+      setStudents([]);
     } finally {
       setLoading(false);
     }
