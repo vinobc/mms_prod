@@ -820,6 +820,175 @@ export const attendanceController = {
         .json({ message: "Error deleting attendance records", error });
     }
   },
+
+  //modify attendance
+  modifyAttendance: async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { courseId } = req.params;
+      const {
+        originalDate,
+        originalStartTime,
+        originalEndTime,
+        originalComponent,
+        date,
+        startTime,
+        endTime,
+        component,
+        attendanceData,
+        academicYear,
+      } = req.body;
+
+      if (!mongoose.Types.ObjectId.isValid(courseId)) {
+        res.status(400).json({ message: "Invalid course ID format" });
+        return;
+      }
+
+      if (
+        !originalDate ||
+        !date ||
+        !attendanceData ||
+        !Array.isArray(attendanceData)
+      ) {
+        res.status(400).json({ message: "Invalid attendance data" });
+        return;
+      }
+
+      // Validate course
+      const course = await Course.findById(courseId);
+      if (!course) {
+        res.status(404).json({ message: "Course not found" });
+        return;
+      }
+
+      // Check if course type requires component
+      const isIntegratedCourse = course.type.includes("Integrated");
+      if (isIntegratedCourse && (!component || !originalComponent)) {
+        res.status(400).json({
+          message: "Component (theory/lab) is required for integrated courses",
+        });
+        return;
+      }
+
+      // Parse dates
+      const origAttendanceDate = new Date(originalDate);
+      const newAttendanceDate = new Date(date);
+
+      if (
+        isNaN(origAttendanceDate.getTime()) ||
+        isNaN(newAttendanceDate.getTime())
+      ) {
+        res.status(400).json({ message: "Invalid date format" });
+        return;
+      }
+
+      // Validate time formats if provided
+      if (startTime && !startTime.match(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)) {
+        res
+          .status(400)
+          .json({ message: "Invalid start time format. Use HH:MM format" });
+        return;
+      }
+
+      if (endTime && !endTime.match(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)) {
+        res
+          .status(400)
+          .json({ message: "Invalid end time format. Use HH:MM format" });
+        return;
+      }
+
+      // Current academic year
+      const currentAcademicYear = academicYear || "2023-24"; // Default or from request
+
+      // Create date ranges for the original day
+      const origStartOfDay = new Date(origAttendanceDate);
+      origStartOfDay.setHours(0, 0, 0, 0);
+      const origEndOfDay = new Date(origAttendanceDate);
+      origEndOfDay.setHours(23, 59, 59, 999);
+
+      // Process each student attendance
+      for (const record of attendanceData) {
+        const { studentId, status, remarks } = record;
+
+        if (!mongoose.Types.ObjectId.isValid(studentId)) {
+          continue; // Skip invalid IDs
+        }
+
+        if (status !== "present" && status !== "absent") {
+          continue; // Skip invalid status
+        }
+
+        // Find the attendance document
+        const attendanceDoc = await Attendance.findOne({
+          courseId,
+          studentId,
+          academicYear: currentAcademicYear,
+        });
+
+        if (attendanceDoc) {
+          // Find the index of the original record
+          const recordIndex = attendanceDoc.records.findIndex(
+            (r: IAttendanceRecord) => {
+              const recordDate = new Date(r.date);
+              const sameDate =
+                recordDate >= origStartOfDay && recordDate <= origEndOfDay;
+              const sameTime =
+                (!originalStartTime || r.startTime === originalStartTime) &&
+                (!originalEndTime || r.endTime === originalEndTime);
+
+              // Match based on date, time, and component
+              if (isIntegratedCourse && originalComponent) {
+                return (
+                  sameDate && sameTime && r.component === originalComponent
+                );
+              }
+              // For non-integrated courses, match on date and time
+              return sameDate && sameTime;
+            }
+          );
+
+          // If we found the record, update it instead of removing/adding
+          if (recordIndex !== -1) {
+            // Create new attendance record
+            const updatedRecord: IAttendanceRecord = {
+              date: newAttendanceDate,
+              status,
+              remarks,
+            };
+
+            // Add time fields if provided
+            if (startTime) updatedRecord.startTime = startTime;
+            if (endTime) updatedRecord.endTime = endTime;
+
+            // Add component if applicable
+            if (component) {
+              updatedRecord.component = component as "theory" | "lab";
+            }
+
+            // Update the existing record
+            attendanceDoc.records[recordIndex] = updatedRecord;
+            await attendanceDoc.save();
+          }
+        }
+      }
+
+      // Return success
+      res.json({
+        message: `Attendance records modified successfully`,
+        originalDate: origAttendanceDate,
+        newDate: newAttendanceDate,
+        originalTimeSlot:
+          originalStartTime && originalEndTime
+            ? `${originalStartTime} - ${originalEndTime}`
+            : null,
+        newTimeSlot: startTime && endTime ? `${startTime} - ${endTime}` : null,
+        originalComponent,
+        newComponent: component,
+      });
+    } catch (error) {
+      console.error("Error modifying attendance:", error);
+      res.status(500).json({ message: "Error modifying attendance", error });
+    }
+  },
 };
 
 export default attendanceController;

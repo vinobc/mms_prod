@@ -46,4 +46,11 @@ router.delete(
   attendanceController.deleteAttendanceRecord as RequestHandler
 );
 
+router.put(
+  "/course/:courseId",
+  protect,
+  (req, res, next) => courseAuthorization(req, res, next),
+  attendanceController.modifyAttendance as RequestHandler
+);
+
 export default router;

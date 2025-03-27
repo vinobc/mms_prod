@@ -210,6 +210,40 @@ export const attendanceService = {
       throw error;
     }
   },
+
+  //modify attendance
+  modifyAttendance: async (
+    courseId: string,
+    originalDate: string | Date,
+    date: string | Date,
+    attendanceData: AttendanceData[],
+    originalStartTime?: string,
+    originalEndTime?: string,
+    startTime?: string,
+    endTime?: string,
+    originalComponent?: "theory" | "lab",
+    component?: "theory" | "lab",
+    academicYear?: string
+  ): Promise<any> => {
+    try {
+      const response = await api.put(`/api/attendance/course/${courseId}`, {
+        originalDate,
+        originalStartTime,
+        originalEndTime,
+        originalComponent,
+        date,
+        startTime,
+        endTime,
+        component,
+        attendanceData,
+        academicYear,
+      });
+      return response.data;
+    } catch (error) {
+      console.error("Error modifying attendance:", error);
+      throw error;
+    }
+  },
 };
 
 export default attendanceService;

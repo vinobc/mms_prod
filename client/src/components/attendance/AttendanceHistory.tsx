@@ -31,10 +31,19 @@ import {
   CalendarMonth as CalendarMonthIcon,
   Refresh as RefreshIcon,
   AccessTime as AccessTimeIcon,
+  Edit as EditIcon,
 } from "@mui/icons-material";
+import EditAttendanceDialog from "./EditAttendanceDialog";
+import { CourseType } from "../../types";
 
 interface AttendanceHistoryProps {
   courseId: string;
+  course?: {
+    _id: string;
+    type: CourseType;
+    name: string;
+    code: string;
+  };
   component?: "theory" | "lab";
   attendanceData: any[];
   attendanceSummary: any;
@@ -239,8 +248,9 @@ const AttendanceDetailsDialog: React.FC<AttendanceDetailsDialogProps> = ({
   );
 };
 
-const AttendanceHistory = ({
+const AttendanceHistory: React.FC<AttendanceHistoryProps> = ({
   courseId,
+  course,
   component,
   attendanceData,
   attendanceSummary,
@@ -250,6 +260,8 @@ const AttendanceHistory = ({
   const [viewMode, setViewMode] = useState("students");
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [selectedSession, setSelectedSession] = useState(null);
 
   // Validate data is in expected format
   const isValidData = useMemo(() => {
@@ -272,6 +284,18 @@ const AttendanceHistory = ({
   // Close details dialog
   const handleCloseDetails = () => {
     setDetailsOpen(false);
+  };
+
+  // Open edit dialog
+  const handleOpenEdit = (sessionData) => {
+    setSelectedSession(sessionData);
+    setEditDialogOpen(true);
+  };
+
+  // Close edit dialog
+  const handleCloseEdit = () => {
+    setEditDialogOpen(false);
+    setSelectedSession(null);
   };
 
   // Handle delete attendance for a date and time slot
@@ -508,13 +532,23 @@ const AttendanceHistory = ({
                       )}
                     </TableCell>
                     <TableCell>
-                      <IconButton
-                        size="small"
-                        color="error"
-                        onClick={() => handleDeleteAttendance(sessionInfo)}
-                      >
-                        <DeleteIcon />
-                      </IconButton>
+                      <Box sx={{ display: "flex" }}>
+                        <IconButton
+                          size="small"
+                          color="primary"
+                          onClick={() => handleOpenEdit(sessionInfo)}
+                          sx={{ mr: 1 }}
+                        >
+                          <EditIcon />
+                        </IconButton>
+                        <IconButton
+                          size="small"
+                          color="error"
+                          onClick={() => handleDeleteAttendance(sessionInfo)}
+                        >
+                          <DeleteIcon />
+                        </IconButton>
+                      </Box>
                     </TableCell>
                   </TableRow>
                 ))
@@ -547,6 +581,16 @@ const AttendanceHistory = ({
           []
         }
         component={component}
+      />
+
+      {/* Edit Attendance Dialog */}
+      <EditAttendanceDialog
+        open={editDialogOpen}
+        onClose={handleCloseEdit}
+        courseId={courseId}
+        courseType={course?.type || "UG"}
+        sessionData={selectedSession}
+        onUpdate={onRefresh}
       />
     </Box>
   );

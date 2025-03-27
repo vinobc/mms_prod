@@ -540,6 +540,7 @@ const AttendancePage = () => {
                 <AttendanceHistory
                   key={`history-${component || "default"}-${course._id}`}
                   courseId={course._id}
+                  course={course} // Add this prop
                   component={component || undefined}
                   attendanceData={attendanceData || []}
                   attendanceSummary={attendanceSummary || {}}
