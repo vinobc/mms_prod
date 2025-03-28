@@ -33,9 +33,7 @@ import {
   AccessTime as AccessTimeIcon,
   Edit as EditIcon,
 } from "@mui/icons-material";
-// import EditAttendanceDialog from "./EditAttendanceDialog";
-// import SimpleEditAttendanceDialog from "./SimpleEditAttendanceDialog";
-import DirectEditAttendanceDialog from "./DirectEditAttendanceDialog";
+import EditAttendanceDialog from "./EditAttendanceDialog";
 import { CourseType } from "../../types";
 
 interface AttendanceHistoryProps {
@@ -595,22 +593,12 @@ const AttendanceHistory: React.FC<AttendanceHistoryProps> = ({
       />
 
       {/* Edit Attendance Dialog */}
-      {/* <EditAttendanceDialog
+      <EditAttendanceDialog
         open={editDialogOpen}
         onClose={handleCloseEdit}
         courseId={courseId}
         courseType={course?.type || "UG"}
         sessionData={selectedSession}
-        onUpdate={onRefresh}
-      /> */}
-
-      <DirectEditAttendanceDialog
-        open={editDialogOpen}
-        onClose={handleCloseEdit}
-        courseId={courseId}
-        courseType={course?.type || "UG"}
-        sessionData={selectedSession}
-        attendanceData={attendanceData || []} // Pass the existing attendance data directly
         onUpdate={onRefresh}
       />
     </Box>
