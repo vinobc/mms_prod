@@ -10,37 +10,37 @@ import {
   TableRow,
   Typography,
   Chip,
-  Button,
+  // Button,
   Alert,
   CircularProgress,
 } from "@mui/material";
-import {
-  Download as DownloadIcon,
-  Print as PrintIcon,
-} from "@mui/icons-material";
+// import {
+// Download as DownloadIcon,
+// Print as PrintIcon,
+// } from "@mui/icons-material";
 import { Course, Student } from "../../types";
 import { scoreService } from "../../services/scoreService";
 import { getComponentScale } from "../../utils/scoreUtils";
 
 // Helper: converts a number to words (digit-by-digit) if needed
-const numberToWords = (num: number): string => {
-  const digitWords = [
-    "ZERO",
-    "ONE",
-    "TWO",
-    "THREE",
-    "FOUR",
-    "FIVE",
-    "SIX",
-    "SEVEN",
-    "EIGHT",
-    "NINE",
-  ];
-  return String(num)
-    .split("")
-    .map((d) => digitWords[parseInt(d, 10)] || "")
-    .join(" ");
-};
+// const numberToWords = (num: number): string => {
+//   const digitWords = [
+//     "ZERO",
+//     "ONE",
+//     "TWO",
+//     "THREE",
+//     "FOUR",
+//     "FIVE",
+//     "SIX",
+//     "SEVEN",
+//     "EIGHT",
+//     "NINE",
+//   ];
+//   return String(num)
+//     .split("")
+//     .map((d) => digitWords[parseInt(d, 10)] || "")
+//     .join(" ");
+// };
 
 interface TotalScoreComponentProps {
   course: Course;
@@ -86,45 +86,19 @@ const TotalScoreComponent: React.FC<TotalScoreComponentProps> = ({
     studentId: string,
     componentName: string
   ): number => {
-    // First, check if rawScores is valid
-    if (!rawScores || !Array.isArray(rawScores) || rawScores.length === 0) {
-      return 0;
-    }
-
-    // Find the student's score from rawScores with proper null checking
     const studentScore = rawScores.find((score) => {
-      // Handle null or undefined studentId
-      if (!score || !score.studentId) return false;
-
       const scoreStudentId =
         typeof score.studentId === "string"
           ? score.studentId
-          : score.studentId && score.studentId._id
-          ? score.studentId._id
-          : null;
-
+          : score.studentId._id;
       return scoreStudentId === studentId;
     });
-
-    // Check if student score or scores array exists
-    if (
-      !studentScore ||
-      !studentScore.scores ||
-      !Array.isArray(studentScore.scores)
-    ) {
-      return 0;
-    }
-
-    // Find the specific component score
+    if (!studentScore || !studentScore.scores) return 0;
     const componentScore = studentScore.scores.find(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (s: any) => s && s.componentName === componentName
+      (s: any) => s.componentName === componentName
     );
-
-    // Return the score value with proper null checking
-    return componentScore && componentScore.obtainedMarks !== undefined
-      ? Number(componentScore.obtainedMarks)
-      : 0;
+    return componentScore ? Number(componentScore.obtainedMarks) : 0;
   };
 
   // Calculate the scaled score for a given component based on course type.
@@ -180,114 +154,72 @@ const TotalScoreComponent: React.FC<TotalScoreComponentProps> = ({
   };
 
   // Handle printing
-  const handlePrint = () => {
-    window.print();
-  };
+  // const handlePrint = () => {
+  //   window.print();
+  // };
 
   // Handle CSV export for total scores
+  // const handleExportCsv = () => {
+  //   if (!course || students.length === 0) return;
 
-  const handleExportCsv = () => {
-    if (!course || students.length === 0) return;
+  //   const components = Object.keys(course.evaluationScheme || {});
 
-    const components = Object.keys(course.evaluationScheme || {});
+  //   // Build header row with course-specific scale details for each component
+  //   const headers = [
+  //     "SNo.",
+  //     "Academic_Year",
+  //     "Program",
+  //     "Enrollment No.",
+  //     "Name",
+  //     "Semester",
+  //   ];
+  //   components.forEach((comp) => {
+  //     const scale = getComponentScale(course.type, comp);
+  //     headers.push(
+  //       `${comp} (Out of ${scale.maxMarks}, Pass ${scale.passingMarks})`
+  //     );
+  //   });
+  //   headers.push("TOTAL", "Status");
 
-    // Helper function to properly escape CSV fields
-    const escapeCSVField = (field) => {
-      if (field === null || field === undefined) return "";
+  //   // Build data rows
+  //   const rows = students.map((student, index) => {
+  //     const row: (string | number)[] = [
+  //       index + 1,
+  //       student.academicYear,
+  //       student.program,
+  //       student.registrationNumber,
+  //       student.name,
+  //       student.semester,
+  //     ];
+  //     components.forEach((comp) => {
+  //       const scaled = calculateScaledScore(student._id, comp);
+  //       row.push(scaled);
+  //     });
+  //     const total = calculateTotal(student._id);
+  //     row.push(total, isStudentPassing(student._id) ? "PASS" : "FAIL");
+  //     return row;
+  //   });
 
-      const stringField = String(field);
-      // If field contains commas, quotes, or newlines, enclose in quotes and escape quotes
-      if (
-        stringField.includes(",") ||
-        stringField.includes('"') ||
-        stringField.includes("\n")
-      ) {
-        return `"${stringField.replace(/"/g, '""')}"`;
-      }
-      return stringField;
-    };
+  //   // Prepend course info at the very top
+  //   const csvRows: string[] = [];
+  //   csvRows.push(`Course Code: ${course.code}, Course Name: ${course.name}`);
+  //   csvRows.push(""); // empty row
+  //   csvRows.push(headers.join(","));
+  //   rows.forEach((row) => {
+  //     csvRows.push(row.join(","));
+  //   });
+  //   const csvContent = csvRows.join("\n");
 
-    try {
-      // Build header row with course-specific scale details for each component
-      const headers = [
-        "SNo.",
-        "Academic_Year",
-        "Program",
-        "Enrollment No.",
-        "Name",
-        "Semester",
-      ];
+  //   const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  //   const url = URL.createObjectURL(blob);
+  //   const link = document.createElement("a");
+  //   link.href = url;
+  //   link.setAttribute("download", `${course.code}_scores.csv`);
+  //   document.body.appendChild(link);
+  //   link.click();
+  //   document.body.removeChild(link);
+  // };
 
-      components.forEach((comp) => {
-        const scale = getComponentScale(course.type, comp);
-        headers.push(
-          `${comp} (Out of ${scale.maxMarks}, Pass ${scale.passingMarks})`
-        );
-      });
-
-      headers.push("TOTAL", "Status");
-
-      // Build data rows
-      const rows = students.map((student, index) => {
-        const row = [
-          index + 1,
-          student.academicYear,
-          student.program,
-          student.registrationNumber,
-          student.name,
-          student.semester,
-        ];
-
-        components.forEach((comp) => {
-          const scaled = calculateScaledScore(student._id, comp);
-          // Format score consistently
-          row.push(scaled.toFixed(1).replace(/\.0$/, ""));
-        });
-
-        const total = calculateTotal(student._id);
-        row.push(
-          total.toFixed(1).replace(/\.0$/, ""),
-          isStudentPassing(student._id) ? "PASS" : "FAIL"
-        );
-
-        return row;
-      });
-
-      // Create CSV content with proper escaping
-      const csvRows = [];
-
-      // Add course info header
-      csvRows.push(
-        escapeCSVField(
-          `Course Code: ${course.code}, Course Name: ${course.name}`
-        )
-      );
-      csvRows.push(""); // empty row
-
-      // Add column headers (properly escaped)
-      csvRows.push(headers.map(escapeCSVField).join(","));
-
-      // Add data rows (properly escaped)
-      rows.forEach((row) => {
-        csvRows.push(row.map(escapeCSVField).join(","));
-      });
-
-      const csvContent = csvRows.join("\n");
-
-      // Create and download the file
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.setAttribute("download", `${course.code}_total_scores.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch (error) {
-      console.error("Error exporting CSV:", error);
-      setError("Failed to export CSV file");
-    }
-  };
   if (loading) {
     return (
       <Box sx={{ display: "flex", justifyContent: "center", p: 4 }}>
@@ -309,21 +241,21 @@ const TotalScoreComponent: React.FC<TotalScoreComponentProps> = ({
           Total Course Scores (Pass: {passingThreshold})
         </Typography>
         <Box>
-          <Button
+          {/* <Button
             variant="outlined"
             startIcon={<PrintIcon />}
             sx={{ mr: 1 }}
             onClick={handlePrint}
           >
             Print
-          </Button>
-          <Button
+          </Button> */}
+          {/* <Button
             variant="outlined"
             startIcon={<DownloadIcon />}
             onClick={handleExportCsv}
           >
             Export CSV
-          </Button>
+          </Button> */}
         </Box>
       </Box>
 
