@@ -24,18 +24,16 @@ app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 app.use("/api/settings", systemSettingRoutes);
 
 // Database connection
-mongoose
-  .connect(process.env.MONGODB_URI!)
-  .then(async () => {
-    // Make this callback async
-    console.log("Connected to MongoDB");
-    // Initialize system settings after connection is established
-    await initializeSystemSettings();
-    console.log("System settings initialized");
-  })
-  .catch((error) => {
-    console.error("MongoDB connection error:", error);
-  });
+if (!process.env.MONGODB_URI) {
+  throw new Error("MONGODB_URI is not defined in environment variables.");
+}
+
+mongoose.connect(process.env.MONGODB_URI || "", {
+  retryWrites: true,
+  w: "majority",
+});
+
+
 
 // Routes
 app.use("/api/courses", courseRoutes);

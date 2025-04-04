@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import api from "./api";
+import { validateScorePayload } from "../utils/scoreValidation"; // Recommend creating this utility
 
 export const scoreService = {
   getScoresByCourse: async (courseId: string) => {
@@ -26,34 +27,82 @@ export const scoreService = {
 
   updateCourseScores: async (courseId: string, scores: any[]) => {
     try {
-      console.log("Updating scores for course:", courseId);
-      console.log("Scores data:", scores);
-
-      // Process scores to ensure zeros are properly handled
-      const processedScores = scores.map((studentScore) => ({
-        ...studentScore,
-        scores: studentScore.scores.map(
-          (score: { obtainedMarks: null | undefined }) => ({
+      // Comprehensive payload validation and processing
+      const validatedScores = scores.map((studentScore) => {
+        // Validate and sanitize student score data
+        return {
+          ...studentScore,
+          scores: (studentScore.scores || []).map((score) => ({
             ...score,
-            // Ensure obtainedMarks is a number, default to 0 if undefined/null
-            obtainedMarks:
-              score.obtainedMarks !== undefined && score.obtainedMarks !== null
-                ? Number(score.obtainedMarks)
-                : 0,
-          })
-        ),
-      }));
-
-      const response = await api.post("/api/scores/course", {
-        courseId,
-        scores: processedScores,
+            componentName: score.componentName,
+            maxMarks: Number(score.maxMarks) || 0,
+            obtainedMarks: Number(score.obtainedMarks) || 0,
+            testDate: score.testDate || new Date().toISOString(),
+          })),
+          questions: (studentScore.questions || []).map((question) => ({
+            ...question,
+            questionNumber: Number(question.questionNumber) || 0,
+            parts: (question.parts || []).map((part) => ({
+              ...part,
+              maxMarks: Number(part.maxMarks) || 0,
+              obtainedMarks: Number(part.obtainedMarks) || 0,
+            })),
+          })),
+          lab_sessions: (studentScore.lab_sessions || []).map((session) => ({
+            ...session,
+            maxMarks: Number(session.maxMarks) || 10,
+            obtainedMarks: Number(session.obtainedMarks) || 0,
+            date: session.date || new Date().toISOString().split("T")[0],
+          })),
+        };
       });
 
-      console.log("Update scores response:", response.data);
+      // Log payload for debugging
+      console.log("Score Update Payload:", {
+        courseId,
+        studentCount: validatedScores.length,
+        componentsPerStudent: validatedScores.map((s) => s.scores.length),
+      });
+
+      // Perform API call with validated payload
+      const response = await api.post("/api/scores/course", {
+        courseId,
+        scores: validatedScores,
+      });
+
+      console.log("Score Update Response:", {
+        updatedStudentCount: response.data.length,
+        firstStudentId: response.data[0]?.studentId,
+      });
+
       return response.data;
-    } catch (error) {
-      console.error("Error updating course scores:", error);
-      throw error;
+    } catch (error: any) {
+      console.error("Comprehensive Score Update Error:", {
+        message: error.message,
+        response: error.response?.data,
+        payload: {
+          courseId,
+          studentCount: scores.length,
+        },
+      });
+
+      // Enhanced error handling
+      if (error.response) {
+        // The request was made and the server responded with a status code
+        // that falls out of the range of 2xx
+        throw new Error(
+          error.response.data.message ||
+            "Failed to update scores. Please try again."
+        );
+      } else if (error.request) {
+        // The request was made but no response was received
+        throw new Error(
+          "No response received from server. Please check your connection."
+        );
+      } else {
+        // Something happened in setting up the request that triggered an Error
+        throw new Error("Error preparing score update request.");
+      }
     }
   },
 
