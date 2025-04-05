@@ -13,39 +13,27 @@ router.get(
   "/course/:courseId",
   protect,
   (req, res, next) => courseAuthorization(req, res, next),
-  (req, res, next) =>
-    scoreController
-      .getScoresByCourse(req, res)
-      .catch(next) as unknown as RequestHandler
+  scoreController.getScoresByCourse as RequestHandler
 );
 
 router.get(
   "/student/:studentId",
   protect,
-  (req, res, next) =>
-    scoreController
-      .getScoresByStudent(req, res)
-      .catch(next) as unknown as RequestHandler
+  scoreController.getScoresByStudent as RequestHandler
 );
 
 router.post(
   "/course",
   protect,
   (req, res, next) => courseAuthorization(req, res, next),
-  (req, res, next) =>
-    scoreController
-      .updateCourseScores(req, res)
-      .catch(next) as unknown as RequestHandler
+  scoreController.updateCourseScores as RequestHandler
 );
 
 router.get(
   "/course/:courseId/summary",
   protect,
   (req, res, next) => courseAuthorization(req, res, next),
-  (req, res, next) =>
-    scoreController
-      .getCourseSummary(req, res)
-      .catch(next) as unknown as RequestHandler
+  scoreController.getCourseSummary as RequestHandler
 );
 
 export default router;

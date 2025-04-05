@@ -1,53 +1,20 @@
 import { Request, Response } from "express";
-import mongoose from "mongoose";
-import Score from "../models/Score";
+import Score, { IScore } from "../models/Score";
 import Course from "../models/Course";
 import Student from "../models/Student";
+import mongoose from "mongoose";
 import { checkScoreEntryEnabled } from "./systemSettingController";
+import {
+  ScoreInput,
+  ExtendedScoreInput,
+  ProcessedQuestion,
+  QuestionInput,
+  LabSessionInput,
+} from "../types";
 
-// Comprehensive type definitions
-interface ScoreComponent {
-  componentName: string;
-  maxMarks: number;
-  obtainedMarks: number;
-  testDate?: string;
-}
-
-interface QuestionPart {
-  partName: string;
-  maxMarks: number;
-  obtainedMarks: number;
-}
-
-interface Question {
-  questionNumber: number;
-  parts: QuestionPart[];
-  meta?: {
-    component?: string;
-    type?: string;
-    date?: string;
-  };
-}
-
-interface LabSession {
-  date: string;
-  maxMarks: number;
-  obtainedMarks: number;
-  index?: number;
-}
-
-interface ExtendedScoreInput {
-  studentId: string;
-  courseId?: string;
-  academicYear: string;
-  scores: ScoreComponent[];
-  questions?: Question[];
-  lab_sessions?: LabSession[];
-}
-
-class ScoreController {
-  // Get scores by course
-  async getScoresByCourse(req: Request, res: Response): Promise<void> {
+export default {
+  // GET scores by course
+  getScoresByCourse: async (req: Request, res: Response): Promise<void> => {
     try {
       const courseId = req.params.courseId;
       if (!mongoose.Types.ObjectId.isValid(courseId)) {
@@ -63,10 +30,10 @@ class ScoreController {
       console.error("Error fetching scores by course:", error);
       res.status(500).json({ message: "Error fetching scores", error });
     }
-  }
+  },
 
-  // Get scores by student
-  async getScoresByStudent(req: Request, res: Response): Promise<void> {
+  // GET scores by student
+  getScoresByStudent: async (req: Request, res: Response): Promise<void> => {
     try {
       const studentId = req.params.studentId;
       if (!mongoose.Types.ObjectId.isValid(studentId)) {
@@ -81,83 +48,14 @@ class ScoreController {
       console.error("Error fetching scores by student:", error);
       res.status(500).json({ message: "Error fetching scores", error });
     }
-  }
+  },
 
-  // Utility method to process and validate score components
-  private processScoreComponent(
-    score: Partial<ScoreComponent>
-  ): ScoreComponent {
-    return {
-      componentName: score.componentName || "Unknown",
-      maxMarks: Number(score.maxMarks) || 0,
-      obtainedMarks: Number(score.obtainedMarks) || 0,
-      testDate: score.testDate || new Date().toISOString(),
-    };
-  }
-
-  // Utility method to process and validate questions
-  private processQuestion(question: Partial<Question>): Question {
-    return {
-      questionNumber: Number(question.questionNumber) || 0,
-      parts: (question.parts || []).map((part) => ({
-        partName: part.partName || "",
-        maxMarks: Number(part.maxMarks) || 0,
-        obtainedMarks: Number(part.obtainedMarks) || 0,
-      })),
-      meta: question.meta || {},
-    };
-  }
-
-  // Utility method to process and validate lab sessions
-  private processLabSession(session: Partial<LabSession>): LabSession {
-    return {
-      date: session.date || new Date().toISOString().split("T")[0],
-      maxMarks: Number(session.maxMarks) || 10,
-      obtainedMarks: Number(session.obtainedMarks) || 0,
-      index: session.index !== undefined ? Number(session.index) : undefined,
-    };
-  }
-
-  // Calculate total marks comprehensively
-  private calculateTotalMarks(
-    scores: ScoreComponent[],
-    questions: Question[],
-    labSessions: LabSession[]
-  ): number {
-    const scoreTotal = scores.reduce(
-      (sum, score) => sum + (Number(score.obtainedMarks) || 0),
-      0
-    );
-
-    const questionTotal = questions.reduce(
-      (sum, question) =>
-        sum +
-        question.parts.reduce(
-          (partSum, part) => partSum + (Number(part.obtainedMarks) || 0),
-          0
-        ),
-      0
-    );
-
-    const labSessionTotal = labSessions.reduce(
-      (sum, session) => sum + (Number(session.obtainedMarks) || 0),
-      0
-    );
-
-    return scoreTotal + questionTotal + labSessionTotal;
-  }
-
-  // Update course scores
-  async updateCourseScores(req: Request, res: Response): Promise<void> {
-    const session = await mongoose.startSession();
-    session.startTransaction();
-
+  // POST: Create or update scores for multiple students in a course
+  updateCourseScores: async (req: Request, res: Response): Promise<void> => {
     try {
-      // Check if score entry is enabled
+      // CHECK IF SCORE ENTRY IS ENABLED
       const isScoreEntryEnabled = await checkScoreEntryEnabled();
       if (!isScoreEntryEnabled) {
-        await session.abortTransaction();
-        session.endSession();
         res.status(403).json({
           message: "Score entry has been disabled by administrator",
           status: "DISABLED",
@@ -166,145 +64,230 @@ class ScoreController {
       }
 
       const { courseId, scores } = req.body;
-      console.log(`Comprehensive Score Update for course ${courseId}`);
+      console.log(`Updating scores for course ${courseId}:`, scores);
 
-      // Validate course exists
-      const course = await Course.findById(courseId).session(session);
+      if (!mongoose.Types.ObjectId.isValid(courseId)) {
+        res.status(400).json({ message: "Invalid course ID format" });
+        return;
+      }
+      const course = await Course.findById(courseId);
       if (!course) {
-        await session.abortTransaction();
-        session.endSession();
         res.status(404).json({ message: "Course not found" });
         return;
       }
 
-      // Comprehensive validation and processing
-      const validationErrors: string[] = [];
-      const processedScores = await Promise.all(
+      const updatedScores = await Promise.all(
         scores.map(async (scoreData: ExtendedScoreInput) => {
-          // Strict student validation
           if (!mongoose.Types.ObjectId.isValid(scoreData.studentId)) {
-            validationErrors.push(`Invalid student ID: ${scoreData.studentId}`);
-            return null;
-          }
-
-          const student = await Student.findById(scoreData.studentId).session(
-            session
-          );
-          if (!student) {
-            validationErrors.push(`Student not found: ${scoreData.studentId}`);
-            return null;
-          }
-
-          if (!student.courseIds.includes(courseId)) {
-            validationErrors.push(
-              `Student not enrolled: ${scoreData.studentId}`
+            throw new Error(
+              `Invalid student ID format: ${scoreData.studentId}`
             );
-            return null;
+          }
+          const student = await Student.findById(scoreData.studentId);
+          if (!student) {
+            throw new Error(`Student not found: ${scoreData.studentId}`);
+          }
+          if (!student.courseIds.includes(courseId)) {
+            throw new Error(
+              `Student ${scoreData.studentId} is not enrolled in this course`
+            );
           }
 
-          // Process scores with strict type conversion
-          const processedStudentScores = (scoreData.scores || []).map((score) =>
-            this.processScoreComponent(score)
-          );
-
-          // Process questions and lab sessions
-          const processedQuestions = (scoreData.questions || []).map(
-            (question) => this.processQuestion(question)
-          );
-
-          const processedLabSessions = (scoreData.lab_sessions || []).map(
-            (session) => this.processLabSession(session)
-          );
-
-          // Calculate total marks with fallback mechanism
-          const totalMarks = this.calculateTotalMarks(
-            processedStudentScores,
-            processedQuestions,
-            processedLabSessions
-          );
-
-          return {
+          const filter = {
             studentId: scoreData.studentId,
-            courseId,
-            academicYear:
-              scoreData.academicYear || new Date().getFullYear().toString(),
-            totalMarks,
-            scores: processedStudentScores,
-            questions: processedQuestions,
-            lab_sessions: processedLabSessions,
+            courseId: courseId,
+            academicYear: scoreData.academicYear,
           };
+
+          const processedScores = scoreData.scores
+            ? scoreData.scores.map((score: any) => ({
+                componentName: score.componentName,
+                maxMarks: Number(score.maxMarks),
+                obtainedMarks: Number(score.obtainedMarks) || 0,
+                testDate: score.testDate || "",
+              }))
+            : [];
+          console.log(
+            "Processed scores with testDates:",
+            processedScores.map(
+              (s) => `${s.componentName}: ${s.testDate || "NO DATE"}`
+            )
+          );
+
+          // Process detailed questions and their parts
+          const processedQuestions: ProcessedQuestion[] = [];
+          if (scoreData.questions && scoreData.questions.length > 0) {
+            scoreData.questions.forEach((question: QuestionInput) => {
+              const processedQuestion: ProcessedQuestion = {
+                questionNumber: Number(question.questionNumber),
+                parts: question.parts.map((part) => ({
+                  partName: part.partName,
+                  maxMarks: Number(part.maxMarks),
+                  obtainedMarks: Number(part.obtainedMarks) || 0,
+                })),
+              };
+
+              // Add metadata if available
+              if (question.meta) {
+                processedQuestion.meta = {
+                  component: question.meta.component,
+                  type: question.meta.type,
+                  date: question.meta.date,
+                };
+              }
+
+              processedQuestions.push(processedQuestion);
+            });
+          }
+
+          // Process lab sessions if provided, ensuring index is preserved
+          const processedLabSessions: any[] = [];
+          if (scoreData.lab_sessions && scoreData.lab_sessions.length > 0) {
+            // First sort lab sessions by index to preserve order
+            const sortedSessions = [...scoreData.lab_sessions].sort((a, b) => {
+              const aIndex = a.index !== undefined ? a.index : 999;
+              const bIndex = b.index !== undefined ? b.index : 999;
+              return aIndex - bIndex;
+            });
+
+            sortedSessions.forEach(
+              (session: LabSessionInput, index: number) => {
+                processedLabSessions.push({
+                  date: session.date || new Date().toISOString().split("T")[0],
+                  maxMarks: Number(session.maxMarks) || 10,
+                  obtainedMarks: Number(session.obtainedMarks) || 0,
+                  // Preserve original index if available, otherwise use array position
+                  index: session.index !== undefined ? session.index : index,
+                });
+              }
+            );
+          } else if (!processedLabSessions.length) {
+            // Try to extract lab sessions from questions with "lab_session" type
+            const labSessionQuestions = processedQuestions.filter(
+              (q) => q.meta && q.meta.type === "lab_session"
+            );
+
+            if (labSessionQuestions.length > 0) {
+              labSessionQuestions.forEach((q, index) => {
+                // Extract the main score from the first part
+                const obtainedMarks =
+                  q.parts && q.parts.length > 0 ? q.parts[0].obtainedMarks : 0;
+
+                processedLabSessions.push({
+                  date: q.meta?.date || new Date().toISOString().split("T")[0],
+                  maxMarks:
+                    q.parts && q.parts.length > 0 ? q.parts[0].maxMarks : 10,
+                  obtainedMarks: obtainedMarks,
+                  index: index,
+                });
+              });
+            }
+          }
+
+          // Calculate total marks from all components
+          let totalMarks = 0;
+          if (processedScores.length > 0) {
+            totalMarks += processedScores.reduce(
+              (sum: number, score: any) =>
+                sum + (Number(score.obtainedMarks) || 0),
+              0
+            );
+          }
+
+          // Add marks from detailed questions only if not already counted in scores
+          const questionComponentsTracked = new Set(
+            processedScores.map((s: any) => s.componentName)
+          );
+
+          if (processedQuestions.length > 0) {
+            const questionsByComponent: { [key: string]: number } = {};
+
+            processedQuestions.forEach((q) => {
+              // Skip lab session questions as they're handled separately
+              if (q.meta && q.meta.type === "lab_session") return;
+
+              const component = q.meta?.component || "Unknown";
+              if (!questionsByComponent[component]) {
+                questionsByComponent[component] = 0;
+              }
+
+              q.parts.forEach((part) => {
+                questionsByComponent[component] += part.obtainedMarks;
+              });
+            });
+
+            // Only add totals for components not already in processedScores
+            Object.entries(questionsByComponent).forEach(
+              ([component, marks]) => {
+                if (!questionComponentsTracked.has(component)) {
+                  totalMarks += marks;
+                }
+              }
+            );
+          }
+
+          // Add marks from lab sessions if LAB component isn't already counted
+          if (
+            processedLabSessions.length > 0 &&
+            !questionComponentsTracked.has("LAB")
+          ) {
+            const labTotal = processedLabSessions.reduce(
+              (sum: number, session: any) =>
+                sum + (Number(session.obtainedMarks) || 0),
+              0
+            );
+
+            // For lab-only courses, we want the average, not the sum
+            const labComponent = processedScores.find(
+              (s: any) => s.componentName === "LAB"
+            );
+
+            // If lab component is already accounted for, don't add to total
+            if (!labComponent) {
+              totalMarks += labTotal;
+            }
+          }
+
+          const updateData: {
+            academicYear: string;
+            totalMarks: number;
+            scores?: any[];
+            questions?: ProcessedQuestion[];
+            lab_sessions?: any[];
+          } = {
+            academicYear: scoreData.academicYear,
+            totalMarks,
+          };
+
+          if (processedScores.length > 0) {
+            updateData.scores = processedScores;
+          }
+          if (processedQuestions.length > 0) {
+            updateData.questions = processedQuestions;
+          }
+          if (processedLabSessions.length > 0) {
+            updateData.lab_sessions = processedLabSessions;
+          }
+
+          return await Score.findOneAndUpdate(
+            filter,
+            { $set: updateData },
+            { new: true, upsert: true, runValidators: true }
+          ).populate("studentId", "registrationNumber name program");
         })
       );
 
-      // Handle validation errors
-      if (validationErrors.length > 0) {
-        await session.abortTransaction();
-        session.endSession();
-        res.status(400).json({
-          message: "Validation Failed",
-          errors: validationErrors,
-        });
-        return;
-      }
-
-      // Filter out null results from processing
-      const validScores = processedScores.filter((score) => score !== null);
-
-      // Bulk write for performance and atomicity
-      const bulkOperations = validScores.map((scoreData) => ({
-        updateOne: {
-          filter: {
-            studentId: scoreData.studentId,
-            courseId: scoreData.courseId,
-            academicYear: scoreData.academicYear,
-          },
-          update: { $set: scoreData },
-          upsert: true,
-        },
-      }));
-
-      // Perform bulk write with session
-      const bulkWriteResult = await Score.bulkWrite(bulkOperations, {
-        session,
-      });
-
-      // Commit transaction
-      await session.commitTransaction();
-      session.endSession();
-
-      // Log successful update
-      console.log(`Successfully updated scores for course ${courseId}`, {
-        updatedCount: bulkWriteResult.modifiedCount,
-        upsertedCount: bulkWriteResult.upsertedCount,
-      });
-
-      // Populate results for response
-      const populatedResults = await Score.find({
-        courseId,
-        academicYear: validScores[0].academicYear,
-      }).populate("studentId", "registrationNumber name program");
-
-      res.json(populatedResults);
+      res.json(updatedScores);
     } catch (error: any) {
-      // Comprehensive error handling
-      await session.abortTransaction();
-      session.endSession();
-
-      console.error("Comprehensive Score Update Error:", {
-        message: error.message,
-        stack: error.stack,
-        payload: req.body,
-      });
-
-      res.status(500).json({
-        message: "Score Update Failed",
-        error: error.message,
-      });
+      console.error("Error updating scores:", error);
+      res
+        .status(400)
+        .json({ message: "Error updating scores", error: error.message });
     }
-  }
+  },
 
-  // Get course summary
-  async getCourseSummary(req: Request, res: Response): Promise<void> {
+  // GET: Retrieve course summary
+  getCourseSummary: async (req: Request, res: Response): Promise<void> => {
     try {
       const courseId = req.params.courseId;
       if (!mongoose.Types.ObjectId.isValid(courseId)) {
@@ -338,15 +321,59 @@ class ScoreController {
         questionStats: {} as any,
       };
 
-      // Existing summary calculation logic remains the same as in previous implementation
+      if (scores.length > 0 && scores[0].scores.length > 0) {
+        const componentScores: { [key: string]: number[] } = {};
+        scores.forEach((scoreDoc) => {
+          scoreDoc.scores.forEach((component) => {
+            if (!componentScores[component.componentName]) {
+              componentScores[component.componentName] = [];
+            }
+            componentScores[component.componentName].push(
+              component.obtainedMarks
+            );
+          });
+        });
+        Object.entries(componentScores).forEach(([componentName, marks]) => {
+          summary.componentStats[componentName] = {
+            highest: Math.max(...marks),
+            lowest: Math.min(...marks),
+            average: marks.reduce((acc, val) => acc + val, 0) / marks.length,
+          };
+        });
+      }
+
+      if (
+        scores.length > 0 &&
+        scores.some((s: any) => s.questions && s.questions.length > 0)
+      ) {
+        const questionPartStats: { [key: string]: number[] } = {};
+        scores.forEach((scoreDoc: any) => {
+          if (scoreDoc.questions && scoreDoc.questions.length > 0) {
+            scoreDoc.questions.forEach((question: any) => {
+              question.parts.forEach((part: any) => {
+                const key = `Q${question.questionNumber}${part.partName}`;
+                if (!questionPartStats[key]) {
+                  questionPartStats[key] = [];
+                }
+                questionPartStats[key].push(part.obtainedMarks);
+              });
+            });
+          }
+        });
+        Object.entries(questionPartStats).forEach(([key, marks]) => {
+          summary.questionStats[key] = {
+            highest: Math.max(...marks),
+            lowest: Math.min(...marks),
+            average: marks.reduce((acc, val) => acc + val, 0) / marks.length,
+            count: marks.length,
+          };
+        });
+      }
 
       res.json(summary);
     } catch (error) {
       console.error("Error generating summary:", error);
       res.status(500).json({ message: "Error generating summary", error });
     }
-  }
-}
-
-// Export an instance of the controller
-export = new ScoreController();
+  },
+};
